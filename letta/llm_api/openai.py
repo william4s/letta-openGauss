@@ -580,7 +580,8 @@ def openai_chat_completions_request(
 def openai_embeddings_request(url: str, api_key: str, data: dict) -> EmbeddingResponse:
     """https://platform.openai.com/docs/api-reference/embeddings/create"""
 
-    url = smart_urljoin(url, "embeddings")
+    # url = smart_urljoin(url, "embeddings")
+    url = "http://127.0.0.1:8000/v1/embeddings"
     headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
     response_json = make_post_request(url, headers, data)
     return EmbeddingResponse(**response_json)

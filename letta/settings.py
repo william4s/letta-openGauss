@@ -89,14 +89,18 @@ class ModelSettings(BaseSettings):
     default_prompt_formatter: str = DEFAULT_WRAPPER_NAME
 
     # openai
-    openai_api_key: Optional[str] = None
-    openai_api_base: str = Field(
-        default="https://api.openai.com/v1",
-        # NOTE: We previously used OPENAI_API_BASE, but this was deprecated in favor of OPENAI_BASE_URL
-        # preferred first, fallback second
-        # env=["OPENAI_BASE_URL", "OPENAI_API_BASE"],  # pydantic-settings v2
-        validation_alias=AliasChoices("OPENAI_BASE_URL", "OPENAI_API_BASE"),  # pydantic-settings v1
-    )
+    # openai_api_key: Optional[str] = None
+    openai_api_key: Optional[str] = '1'
+    openai_api_base: str = "http://127.0.0.1:8000/v1"
+    bge_api_key: Optional[str] = '1'
+    bge_api_base: str = "http://127.0.0.1:8003/v1"
+    # openai_api_base: str = Field(
+    #     default="http://127.0.0.1:8000/v1",
+    #     # NOTE: We previously used OPENAI_API_BASE, but this was deprecated in favor of OPENAI_BASE_URL
+    #     # preferred first, fallback second
+    #     # env=["OPENAI_BASE_URL", "OPENAI_API_BASE"],  # pydantic-settings v2
+    #     validation_alias=AliasChoices("OPENAI_BASE_URL", "OPENAI_API_BASE"),  # pydantic-settings v1
+    # )
 
     # deepseek
     deepseek_api_key: Optional[str] = None
@@ -140,7 +144,7 @@ class ModelSettings(BaseSettings):
     together_api_key: Optional[str] = None
 
     # vLLM
-    vllm_api_base: Optional[str] = None
+    vllm_api_base: Optional[str] = "http://127.0.0.1:8003/v1"
 
     # lmstudio
     lmstudio_base_url: Optional[str] = None
@@ -264,6 +268,16 @@ class Settings(BaseSettings):
     pinecone_source_index: Optional[str] = "sources"
     pinecone_agent_index: Optional[str] = "recall"
     upsert_pinecone_indices: bool = False
+
+    # OpenGauss vector database configuration
+    enable_opengauss: bool = Field(default=False, description="Enable OpenGauss vector storage")
+    opengauss_host: str = Field(default="localhost", description="OpenGauss host")
+    opengauss_port: int = Field(default=5432, description="OpenGauss port")
+    opengauss_database: str = Field(default="letta", description="OpenGauss database name")
+    opengauss_username: str = Field(default="postgres", description="OpenGauss username")
+    opengauss_password: Optional[str] = Field(default=None, description="OpenGauss password")
+    opengauss_table_name: str = Field(default="passage_embeddings", description="OpenGauss embeddings table name")
+    opengauss_ssl_mode: str = Field(default="prefer", description="OpenGauss SSL mode")
 
     @property
     def letta_pg_uri(self) -> str:

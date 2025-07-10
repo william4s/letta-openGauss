@@ -57,6 +57,7 @@ from letta.schemas.providers import (
     AnthropicProvider,
     AzureProvider,
     BedrockProvider,
+    BGEProvider,
     DeepSeekProvider,
     GoogleAIProvider,
     GoogleVertexProvider,
@@ -205,7 +206,22 @@ class SyncServer(Server):
 
         # Managers that interface with data models
         self.organization_manager = OrganizationManager()
-        self.passage_manager = PassageManager()
+        
+        # Initialize PassageManager with OpenGauss configuration
+        opengauss_config = None
+        if settings.enable_opengauss and settings.opengauss_password:
+            from letta.schemas.embedding_config import OpenGaussConfig
+            opengauss_config = OpenGaussConfig(
+                host=settings.opengauss_host,
+                port=settings.opengauss_port,
+                database=settings.opengauss_database,
+                username=settings.opengauss_username,
+                password=settings.opengauss_password,
+                table_name=settings.opengauss_table_name,
+                ssl_mode=settings.opengauss_ssl_mode,
+            )
+        
+        self.passage_manager = PassageManager(opengauss_config=opengauss_config)
         self.user_manager = UserManager()
         self.tool_manager = ToolManager()
         self.mcp_manager = MCPManager()
@@ -285,6 +301,7 @@ class SyncServer(Server):
         # collect providers (always has Letta as a default)
         self._enabled_providers: List[Provider] = [LettaProvider(name="letta")]
         if model_settings.openai_api_key:
+            print("Using OpenAI provider")
             self._enabled_providers.append(
                 OpenAIProvider(
                     name="openai",
@@ -386,6 +403,8 @@ class SyncServer(Server):
             self._enabled_providers.append(DeepSeekProvider(name="deepseek", api_key=model_settings.deepseek_api_key))
         if model_settings.xai_api_key:
             self._enabled_providers.append(XAIProvider(name="xai", api_key=model_settings.xai_api_key))
+        if model_settings.bge_api_key:
+            self._enabled_providers.append(BGEProvider(name="bge", api_key=model_settings.bge_api_key, base_url=model_settings.bge_api_base))
 
         # For MCP
         # TODO: remove this
@@ -1906,6 +1925,7 @@ class SyncServer(Server):
             provider = await self.get_provider_from_name_async(provider_name, actor)
 
             all_embedding_configs = await provider.list_embedding_models_async()
+            print(f"test:\n{all_embedding_configs}")
             embedding_configs = [config for config in all_embedding_configs if config.handle == handle]
             if not embedding_configs:
                 raise ValueError(f"Embedding model {model_name} is not supported by {provider_name}")

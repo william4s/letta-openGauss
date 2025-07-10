@@ -17,6 +17,7 @@ class ProviderType(str, Enum):
     azure = "azure"
     vllm = "vllm"
     bedrock = "bedrock"
+    bge = "bge"
 
 
 class ProviderCategory(str, Enum):

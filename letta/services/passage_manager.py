@@ -11,12 +11,15 @@ from letta.embeddings import embedding_model, parse_and_chunk_text
 from letta.helpers.decorators import async_redis_cache
 from letta.orm.errors import NoResultFound
 from letta.orm.passage import AgentPassage, SourcePassage
+from letta.orm.opengauss_functions import OpenGaussVectorStore
 from letta.otel.tracing import trace_method
 from letta.schemas.agent import AgentState
+from letta.schemas.embedding_config import OpenGaussConfig
 from letta.schemas.file import FileMetadata as PydanticFileMetadata
 from letta.schemas.passage import Passage as PydanticPassage
 from letta.schemas.user import User as PydanticUser
 from letta.server.db import db_registry
+from letta.settings import settings
 from letta.utils import enforce_types
 
 
@@ -41,6 +44,111 @@ async def get_openai_embedding_async(text: str, model: str, endpoint: str) -> li
 
 class PassageManager:
     """Manager class to handle business logic related to Passages."""
+
+    def __init__(self, opengauss_config: Optional[OpenGaussConfig] = None):
+        """Initialize PassageManager with optional OpenGauss configuration."""
+        self.opengauss_config = opengauss_config or self._get_opengauss_config_from_settings()
+        self.vector_store = None
+
+        # Initialize OpenGauss vector store if configuration is provided
+        if self.opengauss_config:
+            try:
+                self.vector_store = OpenGaussVectorStore(
+                    connection_string=self.opengauss_config.connection_string,
+                    table_name=self.opengauss_config.table_name,
+                )
+            except Exception as e:
+                import logging
+
+                logging.warning(f"Failed to initialize OpenGauss vector store: {e}")
+                self.vector_store = None
+
+    def _get_opengauss_config_from_settings(self) -> Optional[OpenGaussConfig]:
+        """Get OpenGauss configuration from settings."""
+        if not settings.enable_opengauss or not settings.opengauss_password:
+            return None
+
+        return OpenGaussConfig(
+            host=settings.opengauss_host,
+            port=settings.opengauss_port,
+            database=settings.opengauss_database,
+            username=settings.opengauss_username,
+            password=settings.opengauss_password,
+            table_name=settings.opengauss_table_name,
+            ssl_mode=settings.opengauss_ssl_mode,
+        )
+
+    def _sync_embedding_to_vector_store(self, passage: PydanticPassage):
+        """Sync embedding to OpenGauss vector store."""
+        if self.vector_store and passage.embedding:
+            try:
+                metadata = {
+                    "agent_id": passage.agent_id,
+                    "source_id": passage.source_id,
+                    "text": passage.text[:1000],  # Store first 1000 chars as metadata
+                    "created_at": passage.created_at.isoformat() if passage.created_at else None,
+                }
+                self.vector_store.store_embedding(
+                    passage_id=passage.id,
+                    embedding=passage.embedding,
+                    metadata=metadata,
+                )
+            except Exception as e:
+                import logging
+
+                logging.warning(f"Failed to sync embedding to OpenGauss for passage {passage.id}: {e}")
+
+    def _remove_embedding_from_vector_store(self, passage_id: str):
+        """Remove embedding from OpenGauss vector store."""
+        if self.vector_store:
+            try:
+                self.vector_store.delete_embedding(passage_id)
+            except Exception as e:
+                import logging
+
+                logging.warning(f"Failed to remove embedding from OpenGauss for passage {passage_id}: {e}")
+
+    def _search_similar_passages_in_vector_store(
+        self,
+        query_embedding: List[float],
+        top_k: int = 10,
+        agent_id: Optional[str] = None,
+        source_id: Optional[str] = None,
+    ) -> List[str]:
+        """Search similar passages in OpenGauss vector store."""
+        if not self.vector_store:
+            return []
+
+        try:
+            # Get similar passages from vector store
+            similar_passages = self.vector_store.search_similar_passages(
+                query_embedding=query_embedding,
+                top_k=top_k,
+                min_similarity=0.1,  # Minimum similarity threshold
+                embedding_dim=len(query_embedding),
+            )
+
+            # Filter by agent_id or source_id if provided
+            filtered_passage_ids = []
+            for passage_id, similarity in similar_passages:
+                # Get metadata to check agent_id/source_id
+                embedding_data = self.vector_store.get_embedding(passage_id)
+                if embedding_data:
+                    _, metadata = embedding_data
+                    if metadata:
+                        if agent_id and metadata.get("agent_id") == agent_id:
+                            filtered_passage_ids.append(passage_id)
+                        elif source_id and metadata.get("source_id") == source_id:
+                            filtered_passage_ids.append(passage_id)
+                        elif not agent_id and not source_id:
+                            filtered_passage_ids.append(passage_id)
+
+            return filtered_passage_ids
+        except Exception as e:
+            import logging
+
+            logging.warning(f"Failed to search similar passages in OpenGauss: {e}")
+            return []
 
     # AGENT PASSAGE METHODS
     @enforce_types
@@ -164,7 +272,9 @@ class PassageManager:
 
         with db_registry.session() as session:
             passage.create(session, actor=actor)
-            return passage.to_pydantic()
+            pydantic_result = passage.to_pydantic()
+            self._sync_embedding_to_vector_store(pydantic_result)  # Sync to vector store
+            return pydantic_result
 
     @enforce_types
     @trace_method
@@ -191,7 +301,9 @@ class PassageManager:
 
         async with db_registry.async_session() as session:
             passage = await passage.create_async(session, actor=actor)
-            return passage.to_pydantic()
+            pydantic_result = passage.to_pydantic()
+            self._sync_embedding_to_vector_store(pydantic_result)  # Sync to vector store
+            return pydantic_result
 
     @enforce_types
     @trace_method
@@ -224,7 +336,9 @@ class PassageManager:
 
         with db_registry.session() as session:
             passage.create(session, actor=actor)
-            return passage.to_pydantic()
+            pydantic_result = passage.to_pydantic()
+            self._sync_embedding_to_vector_store(pydantic_result)  # Sync to vector store
+            return pydantic_result
 
     @enforce_types
     @trace_method
@@ -257,7 +371,9 @@ class PassageManager:
 
         async with db_registry.async_session() as session:
             passage = await passage.create_async(session, actor=actor)
-            return passage.to_pydantic()
+            pydantic_result = passage.to_pydantic()
+            self._sync_embedding_to_vector_store(pydantic_result)  # Sync to vector store
+            return pydantic_result
 
     # DEPRECATED - Use specific methods above
     @enforce_types
@@ -407,183 +523,150 @@ class PassageManager:
     # DEPRECATED - Use specific methods above
     @enforce_types
     @trace_method
-    def create_many_passages(self, passages: List[PydanticPassage], actor: PydanticUser) -> List[PydanticPassage]:
-        """DEPRECATED: Use create_many_agent_passages() or create_many_source_passages() instead."""
+    def create_passage(self, pydantic_passage: PydanticPassage, actor: PydanticUser) -> PydanticPassage:
+        """DEPRECATED: Use create_agent_passage() or create_source_passage() instead."""
         import warnings
 
         warnings.warn(
-            "create_many_passages is deprecated. Use create_many_agent_passages() or create_many_source_passages() instead.",
-            DeprecationWarning,
-            stacklevel=2,
+            "create_passage is deprecated. Use create_agent_passage() or create_source_passage() instead.", DeprecationWarning, stacklevel=2
         )
-        return [self.create_passage(p, actor) for p in passages]
+
+        passage = self._preprocess_passage_for_creation(pydantic_passage=pydantic_passage)
+
+        with db_registry.session() as session:
+            passage.create(session, actor=actor)
+            return passage.to_pydantic()
 
     @enforce_types
     @trace_method
-    async def create_many_passages_async(self, passages: List[PydanticPassage], actor: PydanticUser) -> List[PydanticPassage]:
-        """DEPRECATED: Use create_many_agent_passages_async() or create_many_source_passages_async() instead."""
+    async def create_passage_async(self, pydantic_passage: PydanticPassage, actor: PydanticUser) -> PydanticPassage:
+        """DEPRECATED: Use create_agent_passage_async() or create_source_passage_async() instead."""
         import warnings
 
         warnings.warn(
-            "create_many_passages_async is deprecated. Use create_many_agent_passages_async() or create_many_source_passages_async() instead.",
+            "create_passage_async is deprecated. Use create_agent_passage_async() or create_source_passage_async() instead.",
             DeprecationWarning,
             stacklevel=2,
         )
+
+        # Common fields for both passage types
+        passage = self._preprocess_passage_for_creation(pydantic_passage=pydantic_passage)
+        async with db_registry.async_session() as session:
+            passage = await passage.create_async(session, actor=actor)
+            return passage.to_pydantic()
+
+    @enforce_types
+    @trace_method
+    def create_many_agent_passages(self, passages: List[PydanticPassage], actor: PydanticUser) -> List[PydanticPassage]:
+        """Create multiple agent passages."""
+        return [self.create_agent_passage(p, actor) for p in passages]
+
+    @enforce_types
+    @trace_method
+    async def create_many_agent_passages_async(self, passages: List[PydanticPassage], actor: PydanticUser) -> List[PydanticPassage]:
+        """Create multiple agent passages."""
+        agent_passages = []
+        for p in passages:
+            if not p.agent_id:
+                raise ValueError("Agent passage must have agent_id")
+            if p.source_id:
+                raise ValueError("Agent passage cannot have source_id")
+
+            data = p.model_dump(to_orm=True)
+            common_fields = {
+                "id": data.get("id"),
+                "text": data["text"],
+                "embedding": data["embedding"],
+                "embedding_config": data["embedding_config"],
+                "organization_id": data["organization_id"],
+                "metadata_": data.get("metadata", {}),
+                "is_deleted": data.get("is_deleted", False),
+                "created_at": data.get("created_at", datetime.now(timezone.utc)),
+            }
+            agent_fields = {"agent_id": data["agent_id"]}
+            agent_passages.append(AgentPassage(**common_fields, **agent_fields))
 
         async with db_registry.async_session() as session:
-            agent_passages = []
-            source_passages = []
-
-            for p in passages:
-                model = self._preprocess_passage_for_creation(p)
-                if isinstance(model, AgentPassage):
-                    agent_passages.append(model)
-                elif isinstance(model, SourcePassage):
-                    source_passages.append(model)
-                else:
-                    raise TypeError(f"Unexpected passage type: {type(model)}")
-
-            results = []
-            if agent_passages:
-                agent_created = await AgentPassage.batch_create_async(items=agent_passages, db_session=session, actor=actor)
-                results.extend(agent_created)
-            if source_passages:
-                source_created = await SourcePassage.batch_create_async(items=source_passages, db_session=session, actor=actor)
-                results.extend(source_created)
-
-            return [p.to_pydantic() for p in results]
+            agent_created = await AgentPassage.batch_create_async(items=agent_passages, db_session=session, actor=actor)
+            return [p.to_pydantic() for p in agent_created]
 
     @enforce_types
     @trace_method
-    def insert_passage(
-        self,
-        agent_state: AgentState,
-        agent_id: str,
-        text: str,
-        actor: PydanticUser,
+    def create_many_source_passages(
+        self, passages: List[PydanticPassage], file_metadata: PydanticFileMetadata, actor: PydanticUser
     ) -> List[PydanticPassage]:
-        """Insert passage(s) into archival memory"""
-
-        embedding_chunk_size = agent_state.embedding_config.embedding_chunk_size
-
-        # TODO eventually migrate off of llama-index for embeddings?
-        # Already causing pain for OpenAI proxy endpoints like LM Studio...
-        if agent_state.embedding_config.embedding_endpoint_type != "openai":
-            embed_model = embedding_model(agent_state.embedding_config)
-
-        passages = []
-
-        try:
-            # breakup string into passages
-            for text in parse_and_chunk_text(text, embedding_chunk_size):
-
-                if agent_state.embedding_config.embedding_endpoint_type != "openai":
-                    embedding = embed_model.get_text_embedding(text)
-                else:
-                    # TODO should have the settings passed in via the server call
-                    embedding = get_openai_embedding(
-                        text,
-                        agent_state.embedding_config.embedding_model,
-                        agent_state.embedding_config.embedding_endpoint,
-                    )
-
-                if isinstance(embedding, dict):
-                    try:
-                        embedding = embedding["data"][0]["embedding"]
-                    except (KeyError, IndexError):
-                        # TODO as a fallback, see if we can find any lists in the payload
-                        raise TypeError(
-                            f"Got back an unexpected payload from text embedding function, type={type(embedding)}, value={embedding}"
-                        )
-                passage = self.create_agent_passage(
-                    PydanticPassage(
-                        organization_id=actor.organization_id,
-                        agent_id=agent_id,
-                        text=text,
-                        embedding=embedding,
-                        embedding_config=agent_state.embedding_config,
-                    ),
-                    actor=actor,
-                )
-                passages.append(passage)
-
-            return passages
-
-        except Exception as e:
-            raise e
+        """Create multiple source passages."""
+        return [self.create_source_passage(p, file_metadata, actor) for p in passages]
 
     @enforce_types
     @trace_method
-    async def insert_passage_async(
-        self,
-        agent_state: AgentState,
-        agent_id: str,
-        text: str,
-        actor: PydanticUser,
-        image_ids: Optional[List[str]] = None,
+    async def create_many_source_passages_async(
+        self, passages: List[PydanticPassage], file_metadata: PydanticFileMetadata, actor: PydanticUser
     ) -> List[PydanticPassage]:
-        """Insert passage(s) into archival memory"""
+        """Create multiple source passages."""
+        source_passages = []
+        for p in passages:
+            if not p.source_id:
+                raise ValueError("Source passage must have source_id")
+            if p.agent_id:
+                raise ValueError("Source passage cannot have agent_id")
 
-        embedding_chunk_size = agent_state.embedding_config.embedding_chunk_size
-        text_chunks = list(parse_and_chunk_text(text, embedding_chunk_size))
+            data = p.model_dump(to_orm=True)
+            common_fields = {
+                "id": data.get("id"),
+                "text": data["text"],
+                "embedding": data["embedding"],
+                "embedding_config": data["embedding_config"],
+                "organization_id": data["organization_id"],
+                "metadata_": data.get("metadata", {}),
+                "is_deleted": data.get("is_deleted", False),
+                "created_at": data.get("created_at", datetime.now(timezone.utc)),
+            }
+            source_fields = {
+                "source_id": data["source_id"],
+                "file_id": data.get("file_id"),
+                "file_name": file_metadata.file_name,
+            }
+            source_passages.append(SourcePassage(**common_fields, **source_fields))
 
-        if not text_chunks:
-            return []
+        async with db_registry.async_session() as session:
+            source_created = await SourcePassage.batch_create_async(items=source_passages, db_session=session, actor=actor)
+            return [p.to_pydantic() for p in source_created]
 
-        try:
-            embeddings = await self._generate_embeddings_concurrent(text_chunks, agent_state.embedding_config)
+    # DEPRECATED - Use specific methods above
+    @enforce_types
+    @trace_method
+    def create_passage(self, pydantic_passage: PydanticPassage, actor: PydanticUser) -> PydanticPassage:
+        """DEPRECATED: Use create_agent_passage() or create_source_passage() instead."""
+        import warnings
 
-            passages = [
-                PydanticPassage(
-                    organization_id=actor.organization_id,
-                    agent_id=agent_id,
-                    text=chunk_text,
-                    embedding=embedding,
-                    embedding_config=agent_state.embedding_config,
-                )
-                for chunk_text, embedding in zip(text_chunks, embeddings)
-            ]
+        warnings.warn(
+            "create_passage is deprecated. Use create_agent_passage() or create_source_passage() instead.", DeprecationWarning, stacklevel=2
+        )
 
-            passages = await self.create_many_agent_passages_async(passages=passages, actor=actor)
+        passage = self._preprocess_passage_for_creation(pydantic_passage=pydantic_passage)
 
-            return passages
+        with db_registry.session() as session:
+            passage.create(session, actor=actor)
+            return passage.to_pydantic()
 
-        except Exception as e:
-            raise e
+    @enforce_types
+    @trace_method
+    async def create_passage_async(self, pydantic_passage: PydanticPassage, actor: PydanticUser) -> PydanticPassage:
+        """DEPRECATED: Use create_agent_passage_async() or create_source_passage_async() instead."""
+        import warnings
 
-    async def _generate_embeddings_concurrent(self, text_chunks: List[str], embedding_config) -> List[List[float]]:
-        """Generate embeddings for all text chunks concurrently"""
+        warnings.warn(
+            "create_passage_async is deprecated. Use create_agent_passage_async() or create_source_passage_async() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
 
-        if embedding_config.embedding_endpoint_type != "openai":
-            embed_model = embedding_model(embedding_config)
-            loop = asyncio.get_event_loop()
-
-            tasks = [loop.run_in_executor(None, embed_model.get_text_embedding, text) for text in text_chunks]
-            embeddings = await asyncio.gather(*tasks)
-        else:
-            tasks = [
-                get_openai_embedding_async(
-                    text,
-                    embedding_config.embedding_model,
-                    embedding_config.embedding_endpoint,
-                )
-                for text in text_chunks
-            ]
-            embeddings = await asyncio.gather(*tasks)
-
-        processed_embeddings = []
-        for embedding in embeddings:
-            if isinstance(embedding, dict):
-                try:
-                    processed_embeddings.append(embedding["data"][0]["embedding"])
-                except (KeyError, IndexError):
-                    raise TypeError(
-                        f"Got back an unexpected payload from text embedding function, type={type(embedding)}, value={embedding}"
-                    )
-            else:
-                processed_embeddings.append(embedding)
-
-        return processed_embeddings
+        # Common fields for both passage types
+        passage = self._preprocess_passage_for_creation(pydantic_passage=pydantic_passage)
+        async with db_registry.async_session() as session:
+            passage = await passage.create_async(session, actor=actor)
+            return passage.to_pydantic()
 
     @enforce_types
     @trace_method
@@ -708,6 +791,7 @@ class PassageManager:
             try:
                 passage = AgentPassage.read(db_session=session, identifier=passage_id, actor=actor)
                 passage.hard_delete(session, actor=actor)
+                self._remove_embedding_from_vector_store(passage_id)  # Remove from vector store
                 return True
             except NoResultFound:
                 raise NoResultFound(f"Agent passage with id {passage_id} not found.")
@@ -723,6 +807,7 @@ class PassageManager:
             try:
                 passage = await AgentPassage.read_async(db_session=session, identifier=passage_id, actor=actor)
                 await passage.hard_delete_async(session, actor=actor)
+                self._remove_embedding_from_vector_store(passage_id)  # Remove from vector store
                 return True
             except NoResultFound:
                 raise NoResultFound(f"Agent passage with id {passage_id} not found.")

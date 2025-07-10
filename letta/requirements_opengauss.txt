@@ -1,0 +1,5 @@
+# Existing requirements...
+# Add OpenGauss database support
+psycopg2-binary>=2.9.0
+# OR alternatively, use the specialized OpenGauss driver:
+# py-opengauss>=3.0.0

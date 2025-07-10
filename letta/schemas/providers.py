@@ -117,6 +117,8 @@ class Provider(ProviderBase):
                 return VLLMCompletionsProvider(**self.model_dump(exclude_none=True))
             case ProviderType.xai:
                 return XAIProvider(**self.model_dump(exclude_none=True))
+            case ProviderType.bge:
+                return BGEProvider(**self.model_dump(exclude_none=True))
             case _:
                 raise ValueError(f"Unknown provider type: {self.provider_type}")
 
@@ -184,6 +186,64 @@ class LettaProvider(Provider):
                 batch_size=32,
             )
         ]
+
+
+class BGEProvider(Provider):
+    provider_type: Literal[ProviderType.bge] = Field(ProviderType.bge, description="The type of the provider.")
+    provider_category: ProviderCategory = Field(ProviderCategory.base, description="The category of the provider (base or byok)")
+    api_key: str = Field(..., description="API key for the BGE API.")
+    base_url: str = Field(..., description="Base URL for the BGE API.")
+
+    def list_llm_models(self) -> List[LLMConfig]:
+        # BGE primarily provides embedding models, not LLM models
+        return []
+
+    async def list_llm_models_async(self) -> List[LLMConfig]:
+        # BGE primarily provides embedding models, not LLM models
+        return []
+
+    def list_embedding_models(self) -> List[EmbeddingConfig]:
+        return [
+            EmbeddingConfig(
+                embedding_model="bge-m3",
+                embedding_endpoint_type="openai",
+                embedding_endpoint=self.base_url,
+                embedding_dim=1024,
+                embedding_chunk_size=300,
+                handle=self.get_handle("bge-m3", is_embedding=True),
+                batch_size=32,
+            ),
+            EmbeddingConfig(
+                embedding_model="bge-large-en-v1.5",
+                embedding_endpoint_type="openai",
+                embedding_endpoint=self.base_url,
+                embedding_dim=1024,
+                embedding_chunk_size=300,
+                handle=self.get_handle("bge-large-en-v1.5", is_embedding=True),
+                batch_size=32,
+            ),
+            EmbeddingConfig(
+                embedding_model="bge-base-en-v1.5",
+                embedding_endpoint_type="openai",
+                embedding_endpoint=self.base_url,
+                embedding_dim=768,
+                embedding_chunk_size=300,
+                handle=self.get_handle("bge-base-en-v1.5", is_embedding=True),
+                batch_size=32,
+            ),
+            EmbeddingConfig(
+                embedding_model="bge-small-en-v1.5",
+                embedding_endpoint_type="openai",
+                embedding_endpoint=self.base_url,
+                embedding_dim=384,
+                embedding_chunk_size=300,
+                handle=self.get_handle("bge-small-en-v1.5", is_embedding=True),
+                batch_size=32,
+            ),
+        ]
+
+    async def list_embedding_models_async(self) -> List[EmbeddingConfig]:
+        return self.list_embedding_models()
 
 
 class OpenAIProvider(Provider):
