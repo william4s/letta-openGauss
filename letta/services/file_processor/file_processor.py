@@ -12,7 +12,7 @@ from letta.services.file_manager import FileManager
 from letta.services.file_processor.chunker.line_chunker import LineChunker
 from letta.services.file_processor.chunker.llama_index_chunker import LlamaIndexChunker
 from letta.services.file_processor.embedder.base_embedder import BaseEmbedder
-from letta.services.file_processor.parser.mistral_parser import MistralFileParser
+from letta.services.file_processor.parser.base_parser import FileParser
 from letta.services.job_manager import JobManager
 from letta.services.passage_manager import PassageManager
 from letta.services.source_manager import SourceManager
@@ -21,11 +21,11 @@ logger = get_logger(__name__)
 
 
 class FileProcessor:
-    """Main PDF processing orchestrator"""
+    """Main file processing orchestrator for various document types"""
 
     def __init__(
         self,
-        file_parser: MistralFileParser,
+        file_parser: FileParser,
         embedder: BaseEmbedder,
         actor: User,
         using_pinecone: bool,

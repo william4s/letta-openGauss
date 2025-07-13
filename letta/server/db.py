@@ -19,6 +19,129 @@ from letta.settings import settings
 logger = get_logger(__name__)
 
 
+def ensure_opengauss_database_exists():
+    """确保 OpenGauss 数据库存在，如果不存在则创建它"""
+    if not settings.enable_opengauss or not settings.pg_password:
+        return True
+        
+    import psycopg2
+    from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
+    
+    # 先连接到默认的 postgres 数据库
+    conn_string_postgres = f"postgresql://{settings.pg_user}:{settings.pg_password}@{settings.pg_host}:{settings.pg_port}/postgres"
+    
+    try:
+        logger.info(f"Checking if database '{settings.pg_db}' exists...")
+        conn = psycopg2.connect(conn_string_postgres)
+        conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+        cursor = conn.cursor()
+        
+        # 检查数据库是否存在
+        cursor.execute("SELECT 1 FROM pg_database WHERE datname = %s", (settings.pg_db,))
+        exists = cursor.fetchone()
+        
+        if not exists:
+            logger.info(f"Database '{settings.pg_db}' does not exist. Creating it...")
+            # 使用双引号包装数据库名以处理特殊字符
+            cursor.execute(f'CREATE DATABASE "{settings.pg_db}"')
+            logger.info(f"✓ Database '{settings.pg_db}' created successfully")
+        else:
+            logger.info(f"✓ Database '{settings.pg_db}' already exists")
+            
+        cursor.close()
+        conn.close()
+        
+        # 现在连接到目标数据库并确保必要的扩展存在
+        logger.info(f"Connecting to database '{settings.pg_db}' to set up extensions...")
+        target_conn_string = f"postgresql://{settings.pg_user}:{settings.pg_password}@{settings.pg_host}:{settings.pg_port}/{settings.pg_db}"
+        conn = psycopg2.connect(target_conn_string)
+        conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+        cursor = conn.cursor()
+        
+        # 尝试创建向量扩展 (如果 OpenGauss 支持)
+        try:
+            cursor.execute("CREATE EXTENSION IF NOT EXISTS vector")
+            logger.info("✓ Vector extension enabled")
+        except Exception as e:
+            logger.warning(f"Could not create vector extension: {e}")
+            logger.info("This is normal if your OpenGauss installation doesn't support the vector extension")
+        
+        # 检查是否需要创建其他必要的扩展
+        try:
+            # OpenGauss 使用 pgcrypto 扩展来生成 UUID
+            cursor.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto")
+            logger.info("✓ pgcrypto extension for UUID generation enabled")
+        except Exception as e:
+            logger.warning(f"Could not create pgcrypto extension: {e}")
+            
+        cursor.close()
+        conn.close()
+        
+        logger.info(f"✓ OpenGauss database '{settings.pg_db}' is ready for use")
+        return True
+        
+    except Exception as e:
+        logger.error(f"✗ Error ensuring OpenGauss database exists: {e}")
+        return False
+
+
+def run_alembic_migrations_for_opengauss():
+    """运行 Alembic 数据库迁移以创建 OpenGauss 表结构"""
+    try:
+        import subprocess
+        import sys
+        from pathlib import Path
+        
+        # 获取项目根目录（包含 alembic.ini 的目录）
+        project_root = Path(__file__).parent.parent.parent
+        
+        logger.info("Running Alembic migrations to create OpenGauss table structure...")
+        
+        # 切换到项目根目录并运行 alembic upgrade head
+        result = subprocess.run(
+            [sys.executable, "-m", "alembic", "upgrade", "head"],
+            cwd=project_root,
+            capture_output=True,
+            text=True
+        )
+        
+        if result.returncode == 0:
+            logger.info("✓ Alembic migrations completed successfully")
+            logger.info("✓ OpenGauss database tables created")
+            return True
+        else:
+            logger.error(f"✗ Alembic migration failed:")
+            logger.error(f"stdout: {result.stdout}")
+            logger.error(f"stderr: {result.stderr}")
+            return False
+            
+    except Exception as e:
+        logger.error(f"✗ Error running Alembic migrations: {e}")
+        logger.warning("You may need to run 'alembic upgrade head' manually from the project root directory")
+        return False
+
+
+def initialize_opengauss_database():
+    """完整的 OpenGauss 数据库初始化流程"""
+    if not settings.enable_opengauss:
+        return True
+        
+    logger.info("=== OpenGauss Database Initialization ===")
+    
+    # 步骤 1: 确保数据库存在
+    if not ensure_opengauss_database_exists():
+        return False
+    
+    # 步骤 2: 运行数据库迁移创建表结构
+    if not run_alembic_migrations_for_opengauss():
+        logger.warning("Could not run Alembic migrations automatically.")
+        logger.warning("Please run 'alembic upgrade head' manually from the project root directory.")
+        # 继续执行，因为表可能已经存在
+    
+    logger.info("=== OpenGauss Database Initialization Complete ===")
+    return True
+
+
 def print_sqlite_schema_error():
     """Print a formatted error message for SQLite schema issues"""
     console = Console()
@@ -80,7 +203,37 @@ class DatabaseRegistry:
                 self.config.archival_storage_type = "postgres"
                 self.config.archival_storage_uri = settings.letta_pg_uri_no_default
 
-                engine = create_engine(settings.letta_pg_uri, **self._build_sqlalchemy_engine_args(is_async=False))
+                # Initialize OpenGauss database if enabled
+                if settings.enable_opengauss:
+                    self.logger.info("OpenGauss is enabled, initializing database...")
+                    if not initialize_opengauss_database():
+                        self.logger.error("Failed to initialize OpenGauss database")
+                        raise RuntimeError("OpenGauss database initialization failed")
+
+                # Create engine
+                engine_args = self._build_sqlalchemy_engine_args(is_async=False)
+                
+                # For OpenGauss, we need to handle the version string issue
+                if settings.enable_opengauss:
+                    self.logger.info("Setting up engine for OpenGauss compatibility...")
+                    # Monkey patch the version detection to work with OpenGauss
+                    from sqlalchemy.dialects.postgresql import base
+                    original_get_server_version_info = base.PGDialect._get_server_version_info
+                    
+                    def opengauss_get_server_version_info_sync(self, connection):
+                        try:
+                            return original_get_server_version_info(self, connection)
+                        except (AssertionError, ValueError) as e:
+                            if 'openGauss' in str(e):
+                                # Return a fake PostgreSQL version that SQLAlchemy can work with
+                                logger.info("OpenGauss detected (sync), using PostgreSQL 13 compatibility mode")
+                                return (13, 0)  # Pretend to be PostgreSQL 13
+                            else:
+                                raise
+                    
+                    base.PGDialect._get_server_version_info = opengauss_get_server_version_info_sync
+                
+                engine = create_engine(settings.letta_pg_uri, **engine_args)
 
                 self._engines["default"] = engine
             # SQLite engine
@@ -111,6 +264,32 @@ class DatabaseRegistry:
 
             if settings.letta_pg_uri_no_default:
                 self.logger.info("Creating async postgres engine")
+
+                # Initialize OpenGauss database if enabled (only once for both sync and async)
+                if settings.enable_opengauss and not self._initialized.get("sync"):
+                    self.logger.info("OpenGauss is enabled, initializing database...")
+                    if not initialize_opengauss_database():
+                        self.logger.error("Failed to initialize OpenGauss database")
+                        raise RuntimeError("OpenGauss database initialization failed")
+
+                # For OpenGauss, apply version detection patch for async as well
+                if settings.enable_opengauss:
+                    self.logger.info("Setting up async engine for OpenGauss compatibility...")
+                    from sqlalchemy.dialects.postgresql import base
+                    original_get_server_version_info = base.PGDialect._get_server_version_info
+                    
+                    def opengauss_get_server_version_info_async(self, connection):
+                        try:
+                            return original_get_server_version_info(self, connection)
+                        except (AssertionError, ValueError) as e:
+                            if 'openGauss' in str(e):
+                                # Return a fake PostgreSQL version that SQLAlchemy can work with
+                                logger.info("OpenGauss detected (async), using PostgreSQL 13 compatibility mode")
+                                return (13, 0)  # Pretend to be PostgreSQL 13
+                            else:
+                                raise
+                    
+                    base.PGDialect._get_server_version_info = opengauss_get_server_version_info_async
 
                 # Create async engine - convert URI to async format
                 pg_uri = settings.letta_pg_uri

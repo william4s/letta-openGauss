@@ -353,6 +353,17 @@ def start_server(
     reload: bool = False,
 ):
     """Convenience method to start the server from within Python"""
+    
+    # Load environment variables from .env file
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+        print("✓ Loaded environment variables from .env file")
+    except ImportError:
+        pass  # dotenv not available
+    except Exception as e:
+        print(f"Warning: Could not load .env file: {e}")
+    
     if debug:
         from letta.server.server import logger as server_logger
 

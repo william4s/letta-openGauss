@@ -187,7 +187,7 @@ if "--use-file-pg-uri" in sys.argv:
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="letta_", extra="ignore")
+    model_config = SettingsConfigDict(env_prefix="letta_", env_file=".env", extra="ignore")
 
     letta_dir: Optional[Path] = Field(Path.home() / ".letta", env="LETTA_DIR")
     debug: Optional[bool] = False

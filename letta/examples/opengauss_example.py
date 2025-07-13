@@ -42,6 +42,28 @@ def main():
     
     print(f"OpenGauss connection string: {opengauss_config.connection_string}")
     
+    # Set up environment for OpenGauss initialization
+    os.environ['LETTA_ENABLE_OPENGAUSS'] = 'true'
+    os.environ['LETTA_PG_URI'] = opengauss_config.connection_string
+    
+    # Import and reload settings to apply the new environment variables
+    import importlib
+    from letta import settings as settings_module
+    importlib.reload(settings_module)
+    
+    # Initialize database through DatabaseRegistry
+    from letta.server.db import DatabaseRegistry
+    db_registry = DatabaseRegistry()
+    
+    try:
+        print("Initializing database...")
+        db_registry.initialize_sync(force=True)
+        print("✓ Database initialization completed")
+    except Exception as e:
+        print(f"✗ Database initialization failed: {e}")
+        print("Please check your OpenGauss configuration and ensure the database server is running")
+        return
+    
     # Initialize PassageManager with OpenGauss configuration
     passage_manager = PassageManager(opengauss_config=opengauss_config)
     

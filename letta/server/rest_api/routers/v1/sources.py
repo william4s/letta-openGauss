@@ -27,6 +27,7 @@ from letta.schemas.source_metadata import OrganizationSourcesStats
 from letta.schemas.user import User
 from letta.server.rest_api.utils import get_letta_server
 from letta.server.server import SyncServer
+from letta.services.file_processor.embedder.bge_embedder import BGEEmbedder
 from letta.services.file_processor.embedder.openai_embedder import OpenAIEmbedder
 from letta.services.file_processor.embedder.pinecone_embedder import PineconeEmbedder
 from letta.services.file_processor.file_processor import FileProcessor
@@ -37,6 +38,7 @@ from letta.services.file_processor.file_types import (
     register_mime_types,
 )
 from letta.services.file_processor.parser.mistral_parser import MistralFileParser
+from letta.services.file_processor.parser.simple_text_parser import SimpleTextParser
 from letta.settings import settings
 from letta.utils import safe_create_task, sanitize_filename
 
@@ -221,7 +223,7 @@ async def upload_file_to_source(
     # Check if it's a simple text file
     is_simple_file = is_simple_text_mime_type(file_mime_type)
 
-    # For complex files, require Mistral API key
+    # For complex files, require Mistral API key (unless using BGE for simple files)
     if not is_simple_file and not settings.mistral_api_key:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -443,13 +445,40 @@ async def load_file_to_source_cloud(
     embedding_config: EmbeddingConfig,
     file_metadata: FileMetadata,
 ):
-    file_processor = MistralFileParser()
+    # Determine file type to choose appropriate parser
+    file_mime_type = file_metadata.file_type or "application/octet-stream"
+    is_simple_file = is_simple_text_mime_type(file_mime_type)
+    
+    # Choose parser based on file type and available services
+    if is_simple_file:
+        # For simple text files, use the simple text parser
+        file_parser = SimpleTextParser()
+        logger.info(f"Using SimpleTextParser for {file_mime_type}")
+    else:
+        # For complex files, use Mistral parser if available
+        if settings.mistral_api_key:
+            file_parser = MistralFileParser()
+            logger.info(f"Using MistralFileParser for {file_mime_type}")
+        else:
+            raise ValueError(f"Mistral API key required for complex file type: {file_mime_type}")
+    
+    # Choose embedder based on configuration and availability
     using_pinecone = should_use_pinecone()
     if using_pinecone:
         embedder = PineconeEmbedder()
+        logger.info("Using PineconeEmbedder")
     else:
-        embedder = OpenAIEmbedder(embedding_config=embedding_config)
-    file_processor = FileProcessor(file_parser=file_processor, embedder=embedder, actor=actor, using_pinecone=using_pinecone)
+        # Check if we should use BGE embedder
+        if (embedding_config.embedding_endpoint_type == "openai" and 
+            embedding_config.embedding_endpoint == settings.bge_api_base and
+            settings.bge_api_key):
+            embedder = BGEEmbedder(embedding_config=embedding_config)
+            logger.info(f"Using BGEEmbedder with model: {embedding_config.embedding_model}")
+        else:
+            embedder = OpenAIEmbedder(embedding_config=embedding_config)
+            logger.info(f"Using OpenAIEmbedder with model: {embedding_config.embedding_model}")
+    
+    file_processor = FileProcessor(file_parser=file_parser, embedder=embedder, actor=actor, using_pinecone=using_pinecone)
     await file_processor.process(
         server=server, agent_states=agent_states, source_id=source_id, content=content, file_metadata=file_metadata
     )

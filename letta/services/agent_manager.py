@@ -95,6 +95,31 @@ from letta.utils import enforce_types, united_diff
 logger = get_logger(__name__)
 
 
+def _is_opengauss_database(session) -> bool:
+    """
+    检测是否是openGauss数据库
+    """
+    try:
+        # 检查数据库版本信息来判断是否是openGauss
+        result = session.execute(sa.text("SELECT version()"))
+        version_info = result.scalar()
+        if version_info and "openGauss" in version_info:
+            return True
+
+        # 如果无法通过version()检测，检查设置
+        from letta.settings import settings
+
+        return getattr(settings, "enable_opengauss", False)
+    except Exception:
+        # 如果检测失败，检查设置作为备用方案
+        try:
+            from letta.settings import settings
+
+            return getattr(settings, "enable_opengauss", False)
+        except:
+            return False
+
+
 class AgentManager:
     """Manager class to handle business logic related to Agents."""
 
@@ -170,10 +195,36 @@ class AgentManager:
             return
 
         dialect = session.bind.dialect.name
-        if dialect == "postgresql":
+        is_opengauss = _is_opengauss_database(session)
+
+        if dialect == "postgresql" and not is_opengauss:
             stmt = pg_insert(table).values(rows).on_conflict_do_nothing()
         elif dialect == "sqlite":
             stmt = sa.insert(table).values(rows).prefix_with("OR IGNORE")
+        elif dialect == "postgresql" and is_opengauss:
+            # openGauss不支持ON CONFLICT DO NOTHING语法，使用fallback方法
+            # NOTE: this is not safe for concurrent writes, but is safer than syntax errors
+            # a better solution would be to use ON CONFLICT ON CONSTRAINT constraint_name DO NOTHING
+            # but that requires knowing the constraint name.
+            existing_pks = []
+            pk_columns = [c.name for c in table.primary_key.columns]
+            if pk_columns:
+                # get existing values for primary key columns
+                select_stmt = sa.select(*[table.c[pk_col] for pk_col in pk_columns])
+                existing_pks = [
+                    tuple(row) for row in session.execute(select_stmt).fetchall()
+                ]
+
+            filtered_rows = []
+            for row in rows:
+                pk_values = tuple(row[pk_col] for pk_col in pk_columns)
+                if pk_values not in existing_pks:
+                    filtered_rows.append(row)
+
+            if filtered_rows:
+                stmt = sa.insert(table).values(filtered_rows)
+                session.execute(stmt)
+            return  # exit early
         else:
             # fallback: filter out exact-duplicate dicts in Python
             seen = set()
@@ -193,10 +244,37 @@ class AgentManager:
             return
 
         dialect = session.bind.dialect.name
-        if dialect == "postgresql":
+        # For async, we can't easily run sync code, so we'll rely on a simpler check
+        # and fallback for opengauss.
+        is_opengauss = "opengauss" in str(
+            session.bind.dialect.server_version_info
+        ) or _is_opengauss_database(session)
+
+        if dialect == "postgresql" and not is_opengauss:
             stmt = pg_insert(table).values(rows).on_conflict_do_nothing()
         elif dialect == "sqlite":
             stmt = sa.insert(table).values(rows).prefix_with("OR IGNORE")
+        elif dialect == "postgresql" and is_opengauss:
+            # openGauss不支持ON CONFLICT DO NOTHING语法，使用fallback方法
+            # NOTE: this is not safe for concurrent writes, but is safer than syntax errors
+            existing_pks = []
+            pk_columns = [c.name for c in table.primary_key.columns]
+            if pk_columns:
+                # get existing values for primary key columns
+                select_stmt = sa.select(*[table.c[pk_col] for pk_col in pk_columns])
+                result = await session.execute(select_stmt)
+                existing_pks = [tuple(row) for row in result.fetchall()]
+
+            filtered_rows = []
+            for row in rows:
+                pk_values = tuple(row[pk_col] for pk_col in pk_columns)
+                if pk_values not in existing_pks:
+                    filtered_rows.append(row)
+
+            if filtered_rows:
+                stmt = sa.insert(table).values(filtered_rows)
+                await session.execute(stmt)
+            return  # exit early
         else:
             # fallback: filter out exact-duplicate dicts in Python
             seen = set()

@@ -8,6 +8,34 @@ from letta.config import LettaConfig
 from letta.orm import Base
 from letta.settings import settings
 
+# Monkey patch SQLAlchemy to handle OpenGauss version detection
+def patch_sqlalchemy_version_detection():
+    """Patch SQLAlchemy to treat OpenGauss as PostgreSQL 13"""
+    try:
+        from sqlalchemy.dialects.postgresql.base import PGDialect
+
+        original_get_server_version_info = PGDialect._get_server_version_info
+
+        def patched_get_server_version_info(self, connection):
+            try:
+                return original_get_server_version_info(self, connection)
+            except Exception as e:
+                print(f"[ALEMBIC PATCH] PGDialect._get_server_version_info failed: {e}")
+                print("[ALEMBIC PATCH] Using PostgreSQL 13 version tuple for OpenGauss compatibility")
+                return (13, 0)
+
+        PGDialect._get_server_version_info = patched_get_server_version_info
+        print("[ALEMBIC PATCH] Successfully patched PGDialect._get_server_version_info for OpenGauss.")
+
+    except ImportError:
+        print("[ALEMBIC PATCH] Could not import PGDialect, skipping patch.")
+    except Exception as e:
+        print(f"[ALEMBIC PATCH] An unexpected error occurred during patching: {e}")
+
+
+# Apply the patch before any engine creation
+patch_sqlalchemy_version_detection()
+
 letta_config = LettaConfig.load()
 
 # this is the Alembic Config object, which provides

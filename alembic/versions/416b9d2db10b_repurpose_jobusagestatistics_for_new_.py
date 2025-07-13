@@ -32,7 +32,8 @@ def upgrade() -> None:
     # Change id field from int to string
     op.execute("ALTER TABLE steps RENAME COLUMN id TO old_id")
     op.add_column("steps", sa.Column("id", sa.String(), nullable=True))
-    op.execute("""UPDATE steps SET id = 'step-' || gen_random_uuid()::text""")
+    # Use md5 hash to generate a unique string as a workaround for OpenGauss not having pgcrypto by default
+    op.execute("""UPDATE steps SET id = 'step-' || md5(random()::text || clock_timestamp()::text)""")
     op.drop_column("steps", "old_id")
     op.alter_column("steps", "id", nullable=False)
     op.create_primary_key("pk_steps_id", "steps", ["id"])
