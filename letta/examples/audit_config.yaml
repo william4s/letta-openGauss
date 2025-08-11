@@ -1,0 +1,232 @@
+# Letta RAG 安全审计系统配置文件
+
+audit_config:
+  # 日志设置
+  logging:
+    # 审计日志文件路径
+    file_path: "./logs/security_audit.log"
+    # 高风险事件专用日志
+    high_risk_log: "./logs/high_risk_events.log"
+    # 日志文件最大大小 (MB)
+    max_file_size: 100
+    # 保留的备份文件数量
+    backup_count: 10
+    # 是否启用控制台输出
+    enable_console: true
+    # 是否启用文件日志
+    enable_file: true
+    # 是否启用数据库日志 (未来扩展)
+    enable_database: false
+
+  # 风险评估配置
+  risk_assessment:
+    # 敏感关键词列表
+    sensitive_keywords:
+      # 中文敏感词
+      - "密码"
+      - "身份证"
+      - "银行卡"
+      - "信用卡"
+      - "手机号"
+      - "邮箱"
+      - "社会保障号"
+      - "账号"
+      - "账户"
+      - "密钥"
+      - "医疗记录"
+      - "病历"
+      - "诊断"
+      - "处方"
+      
+      # 英文敏感词
+      - "password"
+      - "id_card"
+      - "bank_card"
+      - "credit_card"
+      - "phone"
+      - "email"
+      - "ssn"
+      - "account"
+      - "pin"
+      - "key"
+      - "secret"
+      - "token"
+      - "medical"
+      - "diagnosis"
+      - "prescription"
+    
+    # 高风险操作模式
+    high_risk_patterns:
+      - "批量下载"
+      - "数据导出"
+      - "权限提升"
+      - "系统配置"
+      - "bulk_download"
+      - "data_export" 
+      - "privilege_escalation"
+      - "system_config"
+    
+    # 风险等级阈值
+    high_risk_threshold: 70
+    medium_risk_threshold: 40
+    low_risk_threshold: 0
+
+  # 告警配置
+  alerts:
+    # 启用邮件告警
+    enable_email: false
+    email_recipients: []
+    
+    # 启用Webhook告警
+    enable_webhook: false
+    webhook_url: ""
+    
+    # 高风险事件立即告警
+    high_risk_immediate: true
+    
+    # 批量异常检测
+    enable_anomaly_detection: true
+    
+    # 告警聚合时间窗口 (分钟)
+    aggregation_window: 5
+
+  # 数据保留策略
+  retention:
+    # 审计日志保留天数
+    audit_logs_days: 90
+    
+    # 敏感数据日志保留天数
+    sensitive_data_days: 30
+    
+    # 高风险事件保留天数
+    high_risk_events_days: 365
+    
+    # 系统错误日志保留天数
+    error_logs_days: 180
+
+  # 合规性设置
+  compliance:
+    # 启用GDPR合规
+    enable_gdpr: true
+    
+    # 启用HIPAA合规 (医疗)
+    enable_hipaa: false
+    
+    # 启用PCI DSS合规 (金融)
+    enable_pci_dss: false
+    
+    # 数据脱敏
+    enable_data_masking: true
+    
+    # 用户同意跟踪
+    require_user_consent: true
+
+  # 性能监控
+  performance:
+    # 启用响应时间监控
+    enable_response_time: true
+    
+    # 慢查询阈值 (毫秒)
+    slow_query_threshold: 5000
+    
+    # 启用资源使用监控
+    enable_resource_monitoring: false
+
+# Web界面配置 (用于Letta Web端集成)
+web_config:
+  # 会话管理
+  session:
+    # 会话超时时间 (分钟)
+    timeout_minutes: 30
+    
+    # 启用会话固定保护
+    enable_session_fixation_protection: true
+    
+    # 启用CSRF保护
+    enable_csrf_protection: true
+
+  # 用户认证
+  authentication:
+    # 启用多因素认证
+    enable_mfa: false
+    
+    # 密码最小长度
+    min_password_length: 8
+    
+    # 启用密码复杂度检查
+    enable_password_complexity: true
+    
+    # 最大登录失败次数
+    max_login_attempts: 5
+    
+    # 账户锁定时间 (分钟)
+    lockout_duration: 15
+
+  # API安全
+  api:
+    # 启用API速率限制
+    enable_rate_limiting: true
+    
+    # 每分钟最大请求数
+    max_requests_per_minute: 100
+    
+    # 启用API密钥认证
+    enable_api_key_auth: false
+    
+    # 启用请求签名验证
+    enable_request_signing: false
+
+# 数据库配置 (用于审计数据持久化)
+database_config:
+  # 数据库类型 (sqlite/postgresql/mysql)
+  type: "sqlite"
+  
+  # SQLite配置
+  sqlite:
+    path: "./audit_database.db"
+  
+  # PostgreSQL配置
+  postgresql:
+    host: "localhost"
+    port: 5432
+    database: "letta_audit"
+    username: "audit_user"
+    password: ""
+  
+  # 连接池配置
+  connection_pool:
+    max_connections: 10
+    min_connections: 2
+    connection_timeout: 30
+
+# 报告配置
+reporting_config:
+  # 定期报告
+  scheduled_reports:
+    # 启用日报
+    enable_daily: true
+    daily_time: "09:00"
+    
+    # 启用周报
+    enable_weekly: true
+    weekly_day: "monday"
+    weekly_time: "09:00"
+    
+    # 启用月报
+    enable_monthly: true
+    monthly_day: 1
+    monthly_time: "09:00"
+  
+  # 报告格式
+  formats:
+    # 支持的格式: json, csv, pdf, html
+    default: "json"
+    available: ["json", "csv", "html"]
+  
+  # 报告内容
+  content:
+    include_user_activities: true
+    include_risk_analysis: true
+    include_system_health: true
+    include_compliance_status: true
+    include_recommendations: true
