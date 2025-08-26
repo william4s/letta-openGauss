@@ -1,4 +1,5 @@
 from letta.server.rest_api.routers.v1.agents import router as agents_router
+from letta.server.rest_api.routers.v1.audit import router as audit_router
 from letta.server.rest_api.routers.v1.blocks import router as blocks_router
 from letta.server.rest_api.routers.v1.embeddings import router as embeddings_router
 from letta.server.rest_api.routers.v1.groups import router as groups_router
@@ -21,6 +22,7 @@ ROUTERS = [
     tools_router,
     sources_router,
     agents_router,
+    audit_router,
     groups_router,
     identities_router,
     llm_router,

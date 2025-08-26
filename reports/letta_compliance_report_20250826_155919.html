@@ -1,0 +1,108 @@
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>Letta服务器合规性报告</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f7fa; }
+        .container { max-width: 1000px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; }
+        .header { background: #2c3e50; color: white; padding: 20px; border-radius: 8px; text-align: center; margin-bottom: 30px; }
+        .violation { background: #fff5f5; border-left: 4px solid #e53e3e; padding: 15px; margin: 15px 0; border-radius: 4px; }
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px; }
+        .stat-card { background: #f8f9fa; padding: 20px; border-radius: 8px; text-align: center; }
+        .stat-value { font-size: 2em; font-weight: bold; color: #2c3e50; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>⚖️ Letta服务器合规性报告</h1>
+            <p>金融文档RAG系统合规监控 | 报告期间: 最近1小时</p>
+        </div>
+        
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-value">43</div>
+                <div>合规相关事件</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">8</div>
+                <div>违规事件</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">7</div>
+                <div>涉违规用户</div>
+            </div>
+        </div>
+        
+        <h2>违规事件详情</h2>
+        
+        <div class="violation">
+            <strong>FINANCIAL_DATA_ACCESS</strong> - 2025-08-26T15:59:19.911414<br>
+            用户: demo_user<br>
+            操作: sensitive_data_query<br>
+            违规项: missing_risk_disclosure, missing_product_description, missing_fee_structure, missing_redemption_terms<br>
+            金融类别: sensitive_data<br>
+        </div>
+            
+        <div class="violation">
+            <strong>FINANCIAL_DATA_ACCESS</strong> - 2025-08-26T15:59:19.911353<br>
+            用户: demo_user<br>
+            操作: query_investment_returns<br>
+            违规项: missing_risk_disclosure, missing_product_description, missing_fee_structure, missing_redemption_terms<br>
+            金融类别: product_info,amount_terms<br>
+        </div>
+            
+        <div class="violation">
+            <strong>PRODUCT_INFO_QUERY</strong> - 2025-08-26T15:59:19.911265<br>
+            用户: demo_user<br>
+            操作: query_product_details<br>
+            违规项: missing_risk_disclosure, missing_product_description, missing_fee_structure, missing_redemption_terms<br>
+            金融类别: product_info,risk_terms<br>
+        </div>
+            
+        <div class="violation">
+            <strong>FINANCIAL_DATA_ACCESS</strong> - 2025-08-26T15:55:20.671895<br>
+            用户: test_user_001<br>
+            操作: sensitive_data_query<br>
+            违规项: missing_risk_disclosure, missing_product_description, missing_fee_structure, missing_redemption_terms<br>
+            金融类别: sensitive_data<br>
+        </div>
+            
+        <div class="violation">
+            <strong>FINANCIAL_DATA_ACCESS</strong> - 2025-08-26T15:55:20.671742<br>
+            用户: test_user_001<br>
+            操作: financial_product_query<br>
+            违规项: missing_risk_disclosure, missing_product_description, missing_fee_structure, missing_redemption_terms<br>
+            金融类别: product_info,risk_terms,amount_terms<br>
+        </div>
+            
+        <div class="violation">
+            <strong>FINANCIAL_DATA_ACCESS</strong> - 2025-08-26T15:54:49.220933<br>
+            用户: test_user_001<br>
+            操作: sensitive_data_query<br>
+            违规项: missing_risk_disclosure, missing_product_description, missing_fee_structure, missing_redemption_terms<br>
+            金融类别: sensitive_data<br>
+        </div>
+            
+        <div class="violation">
+            <strong>FINANCIAL_DATA_ACCESS</strong> - 2025-08-26T15:54:49.220816<br>
+            用户: test_user_001<br>
+            操作: financial_product_query<br>
+            违规项: missing_risk_disclosure, missing_product_description, missing_fee_structure, missing_redemption_terms<br>
+            金融类别: product_info,risk_terms,amount_terms<br>
+        </div>
+            
+        <div class="violation">
+            <strong>FINANCIAL_DATA_ACCESS</strong> - 2025-08-26T15:53:48.798482<br>
+            用户: test_user_001<br>
+            操作: financial_product_query<br>
+            违规项: missing_risk_disclosure, missing_product_description, missing_fee_structure, missing_redemption_terms<br>
+            金融类别: product_info,risk_terms,amount_terms<br>
+        </div>
+            
+        </div>
+    </body>
+    </html>
+        

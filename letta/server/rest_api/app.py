@@ -4,6 +4,7 @@ import logging
 import os
 import sys
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -42,6 +43,9 @@ from letta.server.rest_api.routers.v1.users import router as users_router  # TOD
 from letta.server.rest_api.static_files import mount_static_files
 from letta.server.server import SyncServer
 from letta.settings import settings
+
+# 审计系统导入
+from letta.server.audit_system import get_audit_system, log_server_event, AuditEventType, AuditLevel
 
 # TODO(ethan)
 # NOTE(charles): @ethan I had to add this to get the global as the bottom to work
@@ -115,6 +119,79 @@ class CheckPasswordMiddleware(BaseHTTPMiddleware):
         )
 
 
+class AuditMiddleware(BaseHTTPMiddleware):
+    """审计中间件 - 记录所有API请求"""
+    
+    async def dispatch(self, request, call_next):
+        start_time = datetime.now()
+        
+        # 提取请求信息
+        user_id = request.headers.get("X-User-ID", "anonymous")
+        session_id = request.headers.get("X-Session-ID")
+        ip_address = request.client.host if request.client else None
+        user_agent = request.headers.get("User-Agent")
+        method = request.method
+        path = str(request.url.path)
+        
+        # 跳过健康检查和静态文件
+        if path in {"/v1/health", "/v1/health/", "/latest/health/"} or path.startswith("/static"):
+            return await call_next(request)
+        
+        # 确定事件类型
+        event_type = AuditEventType.AUTHENTICATION
+        if "/agents" in path:
+            if method == "POST":
+                event_type = AuditEventType.AGENT_CREATION
+            else:
+                event_type = AuditEventType.AGENT_MESSAGE
+        elif "/sources" in path or "/documents" in path:
+            event_type = AuditEventType.DOCUMENT_ACCESS
+        elif "/messages" in path:
+            event_type = AuditEventType.RAG_QUERY
+        
+        success = True
+        error_message = None
+        status_code = 200
+        
+        try:
+            response = await call_next(request)
+            status_code = response.status_code
+            success = status_code < 400
+            return response
+        except Exception as e:
+            success = False
+            error_message = str(e)
+            status_code = 500
+            raise
+        finally:
+            # 计算响应时间
+            response_time = int((datetime.now() - start_time).total_seconds() * 1000)
+            
+            # 记录审计事件
+            try:
+                log_server_event(
+                    event_type=event_type,
+                    level=AuditLevel.ERROR if not success else AuditLevel.INFO,
+                    action=f"{method} {path}",
+                    user_id=user_id,
+                    session_id=session_id,
+                    ip_address=ip_address,
+                    user_agent=user_agent,
+                    resource=path,
+                    success=success,
+                    response_time_ms=response_time,
+                    error_message=error_message,
+                    details={
+                        "method": method,
+                        "path": path,
+                        "status_code": status_code,
+                        "query_params": dict(request.query_params)
+                    }
+                )
+            except Exception as audit_error:
+                logger.error(f"审计记录失败: {audit_error}")
+
+
 @asynccontextmanager
 async def lifespan(app_: FastAPI):
     """
@@ -123,6 +200,20 @@ async def lifespan(app_: FastAPI):
     worker_id = os.getpid()
 
     logger.info(f"[Worker {worker_id}] Starting lifespan initialization")
+    
+    # 初始化审计系统
+    logger.info(f"[Worker {worker_id}] Initializing audit system")
+    audit_system = get_audit_system()
+    logger.info(f"[Worker {worker_id}] Audit system initialized")
+    
+    # 记录服务器启动事件
+    log_server_event(
+        event_type=AuditEventType.USER_SESSION_START,
+        level=AuditLevel.INFO,
+        action="server_startup",
+        details={"worker_id": worker_id, "version": letta_version}
+    )
+    
     logger.info(f"[Worker {worker_id}] Initializing database connections")
     db_registry.initialize_sync()
     db_registry.initialize_async()
@@ -150,6 +241,15 @@ async def lifespan(app_: FastAPI):
 
     # Cleanup on shutdown
     logger.info(f"[Worker {worker_id}] Starting lifespan shutdown")
+    
+    # 记录服务器关闭事件
+    log_server_event(
+        event_type=AuditEventType.USER_SESSION_END,
+        level=AuditLevel.INFO,
+        action="server_shutdown",
+        details={"worker_id": worker_id}
+    )
+    
     try:
         from letta.jobs.scheduler import shutdown_scheduler_and_release_lock
 
@@ -157,6 +257,12 @@ async def lifespan(app_: FastAPI):
         logger.info(f"[Worker {worker_id}] Scheduler shutdown completed")
     except Exception as e:
         logger.error(f"[Worker {worker_id}] Scheduler shutdown failed: {e}", exc_info=True)
+    
+    # 关闭审计系统
+    if 'audit_system' in locals():
+        audit_system.close()
+        logger.info(f"[Worker {worker_id}] Audit system shutdown completed")
+    
     logger.info(f"[Worker {worker_id}] Lifespan shutdown completed")
 
 
@@ -289,6 +395,10 @@ def create_application() -> "FastAPI":
     if (os.getenv("LETTA_SERVER_SECURE") == "true") or "--secure" in sys.argv:
         print(f"▶ Using secure mode with password: {random_password}")
         app.add_middleware(CheckPasswordMiddleware)
+
+    # 添加审计中间件
+    app.add_middleware(AuditMiddleware)
+    print("▶ Audit system middleware enabled")
 
     app.add_middleware(
         CORSMiddleware,
