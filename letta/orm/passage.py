@@ -30,9 +30,13 @@ class BasePassage(SqlalchemyBase, OrganizationMixin):
 
     # Vector embedding field based on database type
     if settings.letta_pg_uri_no_default:
-        from pgvector.sqlalchemy import Vector
-
-        embedding = mapped_column(Vector(MAX_EMBEDDING_DIM))
+        # 对于OpenGauss，使用TEXT类型避免vector类型兼容性问题
+        if settings.enable_opengauss:
+            from sqlalchemy import Text
+            embedding = mapped_column(Text, doc="Embedding vector as JSON text")
+        else:
+            from pgvector.sqlalchemy import Vector
+            embedding = mapped_column(Vector(MAX_EMBEDDING_DIM))
     else:
         embedding = Column(CommonVector)
 

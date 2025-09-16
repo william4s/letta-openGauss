@@ -9,13 +9,15 @@ import json
 import hashlib
 import datetime
 import asyncio
+import uuid
+import time
+import sqlite3
+import threading
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Union
 from dataclasses import dataclass, asdict
 from enum import Enum
 import logging
-import sqlite3
-import threading
 from concurrent.futures import ThreadPoolExecutor
 
 from letta.log import get_logger
@@ -189,7 +191,7 @@ class ServerAuditSystem:
         self.logger.setLevel(logging.INFO)
         self.logger.handlers.clear()
         
-        # 文件处理器
+        # 只添加文件处理器，不添加控制台处理器
         file_handler = logging.FileHandler(self.audit_log_path, encoding='utf-8')
         file_formatter = logging.Formatter(
             '%(asctime)s | %(levelname)s | %(message)s',
@@ -198,11 +200,8 @@ class ServerAuditSystem:
         file_handler.setFormatter(file_formatter)
         self.logger.addHandler(file_handler)
         
-        # 控制台处理器
-        console_handler = logging.StreamHandler()
-        console_formatter = logging.Formatter('🔍 AUDIT | %(levelname)s | %(message)s')
-        console_handler.setFormatter(console_formatter)
-        self.logger.addHandler(console_handler)
+        # 设置logger不传播到父logger，避免重复输出
+        self.logger.propagate = False
     
     def _setup_database(self):
         """设置SQLite审计数据库"""
@@ -251,6 +250,15 @@ class ServerAuditSystem:
     def _calculate_data_hash(self, data: str) -> str:
         """计算数据哈希值"""
         return hashlib.sha256(data.encode('utf-8')).hexdigest()[:16]
+    
+    def _generate_unique_event_id(self) -> str:
+        """生成唯一的事件ID"""
+        import uuid
+        import time
+        # 使用时间戳 + UUID 确保唯一性
+        timestamp = str(int(time.time() * 1000000))  # 微秒时间戳
+        unique_part = str(uuid.uuid4().hex)[:8]
+        return f"{timestamp}_{unique_part}"
     
     def _calculate_risk_score(self, event_type: AuditEventType, action: str, 
                             details: Dict, success: bool, financial_analysis: Dict = None) -> int:
@@ -325,7 +333,7 @@ class ServerAuditSystem:
             financial_category = ",".join(financial_analysis.get("financial_categories", []))
         
         # 创建审计事件
-        event_id = f"{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}_{hash(str(details))%10000:04d}"
+        event_id = self._generate_unique_event_id()
         
         event = AuditEvent(
             id=event_id,
@@ -359,9 +367,10 @@ class ServerAuditSystem:
     def _record_event(self, event: AuditEvent):
         """记录事件到日志和数据库"""
         try:
-            # 记录到日志文件
+            # 记录到文件日志
             log_message = json.dumps(asdict(event), ensure_ascii=False, separators=(',', ':'))
             
+            # 记录到审计文件
             if event.level in ["ERROR", "SECURITY", "COMPLIANCE"]:
                 self.logger.error(log_message)
             elif event.level == "WARN":
@@ -369,22 +378,50 @@ class ServerAuditSystem:
             else:
                 self.logger.info(log_message)
             
-            # 记录到数据库
+            # 只有重要事件才在主服务器日志中显示
+            main_logger = logging.getLogger(__name__)
+            if event.level in ["ERROR", "SECURITY", "COMPLIANCE"]:
+                main_logger.error(f"🚨 审计安全事件: {event.event_type} - 用户: {event.user_id} - 风险分数: {event.risk_score}")
+            elif event.risk_score >= 70:  # 只有极高风险事件才显示在控制台
+                main_logger.warning(f"⚠️ 高风险审计事件: {event.event_type} (风险分数: {event.risk_score})")
+            elif event.level == "WARN":
+                main_logger.debug(f"📋 审计警告: {event.event_type}")  # 使用debug级别，默认不显示
+            
+            # 记录到数据库 - 添加重试机制
             if self.db_conn:
-                with self.db_lock:
-                    cursor = self.db_conn.cursor()
-                    cursor.execute("""
-                        INSERT INTO audit_events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (
-                        event.id, event.timestamp, event.event_type, event.level,
-                        event.user_id, event.session_id, event.ip_address, event.user_agent,
-                        event.resource, event.action, json.dumps(event.details),
-                        event.success, event.risk_score, 
-                        json.dumps(event.compliance_flags) if event.compliance_flags else None,
-                        event.financial_category, event.data_hash, 
-                        event.response_time_ms, event.error_message
-                    ))
-                    self.db_conn.commit()
+                max_retries = 3
+                for attempt in range(max_retries):
+                    try:
+                        with self.db_lock:
+                            cursor = self.db_conn.cursor()
+                            cursor.execute("""
+                                INSERT INTO audit_events VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """, (
+                                event.id, event.timestamp, event.event_type, event.level,
+                                event.user_id, event.session_id, event.ip_address, event.user_agent,
+                                event.resource, event.action, json.dumps(event.details),
+                                event.success, event.risk_score, 
+                                json.dumps(event.compliance_flags) if event.compliance_flags else None,
+                                event.financial_category, event.data_hash, 
+                                event.response_time_ms, event.error_message
+                            ))
+                            self.db_conn.commit()
+                            break  # 成功则跳出重试循环
+                    except sqlite3.IntegrityError as e:
+                        if "UNIQUE constraint failed" in str(e) and attempt < max_retries - 1:
+                            # 如果是ID冲突，重新生成ID并重试
+                            event.id = self._generate_unique_event_id()
+                            continue
+                        else:
+                            # 其他完整性错误或已达到最大重试次数
+                            logger.error(f"数据库完整性错误: {e}")
+                            break
+                    except Exception as e:
+                        logger.error(f"数据库操作失败 (尝试 {attempt + 1}): {e}")
+                        if attempt == max_retries - 1:
+                            break
+                        import time
+                        time.sleep(0.01)  # 短暂等待后重试
             
             # 高风险事件处理
             if event.risk_score >= 70:

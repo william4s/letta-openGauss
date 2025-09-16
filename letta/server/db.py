@@ -18,6 +18,16 @@ from letta.settings import settings
 
 logger = get_logger(__name__)
 
+# Vector类型处理
+try:
+    from .vector_type_handler import register_vector_type_codec, setup_vector_type_handling
+    setup_vector_type_handling()
+    logger.info("✅ Vector类型处理已初始化")
+except ImportError as e:
+    logger.warning(f"⚠️ Vector类型处理导入失败: {e}")
+except Exception as e:
+    logger.warning(f"⚠️ Vector类型处理初始化失败: {e}")
+
 
 def ensure_opengauss_database_exists():
     """确保 OpenGauss 数据库存在，如果不存在则创建它"""
@@ -299,6 +309,28 @@ class DatabaseRegistry:
                     async_pg_uri = f"postgresql+asyncpg://{pg_uri.split('://', 1)[1]}" if "://" in pg_uri else pg_uri
                 async_pg_uri = async_pg_uri.replace("sslmode=", "ssl=")
                 async_engine = create_async_engine(async_pg_uri, **self._build_sqlalchemy_engine_args(is_async=True))
+                
+                # 添加vector类型处理支持
+                try:
+                    @asynccontextmanager
+                    async def get_connection():
+                        async with async_engine.connect() as conn:
+                            try:
+                                # 获取底层的asyncpg连接并注册vector类型
+                                raw_conn = await conn.get_raw_connection()
+                                if hasattr(raw_conn, '_connection'):
+                                    from .vector_type_handler import register_vector_type_codec
+                                    await register_vector_type_codec(raw_conn._connection)
+                                    logger.info("✅ Vector类型编解码器已注册到异步连接")
+                            except Exception as e:
+                                logger.warning(f"⚠️ 注册vector类型失败: {e}")
+                            yield conn
+                    
+                    # 为引擎添加vector类型处理标记
+                    async_engine._vector_type_registered = True
+                    logger.info("✅ 异步引擎vector类型处理已配置")
+                except Exception as e:
+                    logger.warning(f"⚠️ 配置异步引擎vector类型处理失败: {e}")
             else:
                 # create sqlite async engine
                 self._initialized["async"] = False

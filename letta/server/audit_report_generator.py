@@ -12,6 +12,7 @@ import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 import argparse
+from jinja2 import Template
 
 from letta.log import get_logger
 
@@ -312,50 +313,45 @@ class LettaAuditReportGenerator:
     
     def _generate_html_report(self, data: Dict, filepath: Path):
         """生成HTML格式报告"""
-        # 安全地获取数据，避免KeyError
-        basic_stats = data.get('basic_stats', {})
-        event_types = data.get('event_types', [])
-        user_stats = data.get('user_stats', [])
-        high_risk_events = data.get('high_risk_events', [])
-        compliance_violations = data.get('compliance_violations', [])
-        financial_analysis = data.get('financial_analysis', {})
-        
-        # 构建HTML内容
-        html_content = f"""<!DOCTYPE html>
+        html_template = """
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Letta服务器审计报告</title>
     <style>
-        body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; background-color: #f5f7fa; }}
-        .container {{ max-width: 1200px; margin: 0 auto; background: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
-        .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 8px 8px 0 0; text-align: center; }}
-        .header h1 {{ margin: 0; font-size: 2.5em; }}
-        .header p {{ margin: 10px 0 0 0; opacity: 0.9; }}
-        .content {{ padding: 30px; }}
-        .section {{ margin-bottom: 40px; }}
-        .section h2 {{ color: #2c3e50; border-bottom: 3px solid #3498db; padding-bottom: 10px; margin-bottom: 20px; }}
-        .stats-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px; }}
-        .stat-card {{ background: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 4px solid #3498db; }}
-        .stat-card.high-risk {{ border-left-color: #e74c3c; }}
-        .stat-card.medium-risk {{ border-left-color: #f39c12; }}
-        .stat-card.low-risk {{ border-left-color: #27ae60; }}
-        .stat-value {{ font-size: 2em; font-weight: bold; color: #2c3e50; margin: 0; }}
-        .stat-label {{ color: #7f8c8d; margin: 5px 0 0 0; }}
-        .table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
-        .table th, .table td {{ padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }}
-        .table th {{ background-color: #f1f3f4; font-weight: 600; }}
-        .table tr:hover {{ background-color: #f8f9fa; }}
-        .risk-high {{ color: #e74c3c; font-weight: bold; }}
-        .risk-medium {{ color: #f39c12; font-weight: bold; }}
-        .risk-low {{ color: #27ae60; }}
-        .alert {{ padding: 15px; margin: 15px 0; border-radius: 5px; }}
-        .alert-danger {{ background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }}
-        .alert-warning {{ background-color: #fff3cd; color: #856404; border: 1px solid #ffeaa7; }}
-        .alert-info {{ background-color: #d1ecf1; color: #0c5460; border: 1px solid #b8daff; }}
-        .financial-section {{ background: #fff8dc; border: 2px solid #daa520; border-radius: 8px; padding: 20px; margin: 20px 0; }}
-        .compliance-violation {{ background: #ffe6e6; border-left: 4px solid #ff4444; padding: 15px; margin: 10px 0; border-radius: 4px; }}
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; background-color: #f5f7fa; }
+        .container { max-width: 1200px; margin: 0 auto; background: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 8px 8px 0 0; text-align: center; }
+        .header h1 { margin: 0; font-size: 2.5em; }
+        .header p { margin: 10px 0 0 0; opacity: 0.9; }
+        .content { padding: 30px; }
+        .section { margin-bottom: 40px; }
+        .section h2 { color: #2c3e50; border-bottom: 3px solid #3498db; padding-bottom: 10px; margin-bottom: 20px; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px; }
+        .stat-card { background: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 4px solid #3498db; }
+        .stat-card.high-risk { border-left-color: #e74c3c; }
+        .stat-card.medium-risk { border-left-color: #f39c12; }
+        .stat-card.low-risk { border-left-color: #27ae60; }
+        .stat-value { font-size: 2em; font-weight: bold; color: #2c3e50; margin: 0; }
+        .stat-label { color: #7f8c8d; margin: 5px 0 0 0; }
+        .table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        .table th, .table td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+        .table th { background-color: #f1f3f4; font-weight: 600; }
+        .table tr:hover { background-color: #f8f9fa; }
+        .risk-high { color: #e74c3c; font-weight: bold; }
+        .risk-medium { color: #f39c12; font-weight: bold; }
+        .risk-low { color: #27ae60; }
+        .alert { padding: 15px; margin: 15px 0; border-radius: 5px; }
+        .alert-danger { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .alert-warning { background-color: #fff3cd; color: #856404; border: 1px solid #ffeaa7; }
+        .alert-info { background-color: #d1ecf1; color: #0c5460; border: 1px solid #b8daff; }
+        .chart-container { background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; }
+        .progress-bar { background-color: #e9ecef; border-radius: 4px; overflow: hidden; height: 20px; margin: 10px 0; }
+        .progress-fill { height: 100%; background-color: #007bff; transition: width 0.3s ease; }
+        .financial-section { background: #fff8dc; border: 2px solid #daa520; border-radius: 8px; padding: 20px; margin: 20px 0; }
+        .compliance-violation { background: #ffe6e6; border-left: 4px solid #ff4444; padding: 15px; margin: 10px 0; border-radius: 4px; }
     </style>
 </head>
 <body>
@@ -363,7 +359,7 @@ class LettaAuditReportGenerator:
         <div class="header">
             <h1>🔍 Letta服务器审计报告</h1>
             <p>金融文档RAG系统安全审计与合规监控</p>
-            <p>报告期间: {data.get('report_period', '未知')} | 生成时间: {data.get('generation_time', '未知')[:19]}</p>
+            <p>报告期间: {{ data.report_period }} | 生成时间: {{ data.generation_time[:19] }}</p>
         </div>
         
         <div class="content">
@@ -372,40 +368,36 @@ class LettaAuditReportGenerator:
                 <h2>📊 概览统计</h2>
                 <div class="stats-grid">
                     <div class="stat-card">
-                        <div class="stat-value">{basic_stats.get('total_events', 0)}</div>
+                        <div class="stat-value">{{ data.basic_stats.total_events }}</div>
                         <div class="stat-label">总事件数</div>
                     </div>
                     <div class="stat-card high-risk">
-                        <div class="stat-value">{basic_stats.get('high_risk_events', 0)}</div>
+                        <div class="stat-value">{{ data.basic_stats.high_risk_events }}</div>
                         <div class="stat-label">高风险事件</div>
                     </div>
                     <div class="stat-card medium-risk">
-                        <div class="stat-value">{basic_stats.get('medium_risk_events', 0)}</div>
+                        <div class="stat-value">{{ data.basic_stats.medium_risk_events }}</div>
                         <div class="stat-label">中风险事件</div>
                     </div>
                     <div class="stat-card low-risk">
-                        <div class="stat-value">{basic_stats.get('low_risk_events', 0)}</div>
+                        <div class="stat-value">{{ data.basic_stats.low_risk_events }}</div>
                         <div class="stat-label">低风险事件</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-value">{basic_stats.get('failed_events', 0)}</div>
+                        <div class="stat-value">{{ data.basic_stats.failed_events }}</div>
                         <div class="stat-label">失败事件</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-value">{basic_stats.get('avg_risk_score', 0):.1f}</div>
+                        <div class="stat-value">{{ "%.1f"|format(data.basic_stats.avg_risk_score) }}</div>
                         <div class="stat-label">平均风险分数</div>
                     </div>
-                </div>"""
-        
-        # 添加安全警告
-        if basic_stats.get('high_risk_events', 0) > 0:
-            html_content += f"""
+                </div>
+                
+                {% if data.basic_stats.high_risk_events > 0 %}
                 <div class="alert alert-danger">
-                    <strong>⚠️ 安全警告:</strong> 检测到 {basic_stats.get('high_risk_events', 0)} 个高风险事件，需要立即关注！
-                </div>"""
-        
-        # 事件类型分布
-        html_content += """
+                    <strong>⚠️ 安全警告:</strong> 检测到 {{ data.basic_stats.high_risk_events }} 个高风险事件，需要立即关注！
+                </div>
+                {% endif %}
             </div>
             
             <!-- 事件类型分布 -->
@@ -420,51 +412,41 @@ class LettaAuditReportGenerator:
                             <th>风险评级</th>
                         </tr>
                     </thead>
-                    <tbody>"""
-        
-        for event in event_types:
-            avg_risk = event.get('avg_risk', 0)
-            risk_class = 'risk-high' if avg_risk >= 70 else 'risk-medium' if avg_risk >= 40 else 'risk-low'
-            risk_label = '高风险' if avg_risk >= 70 else '中风险' if avg_risk >= 40 else '低风险'
-            
-            html_content += f"""
+                    <tbody>
+                        {% for event in data.event_types %}
                         <tr>
-                            <td>{event.get('type', '未知')}</td>
-                            <td>{event.get('count', 0)}</td>
-                            <td>{avg_risk:.1f}</td>
-                            <td class="{risk_class}">{risk_label}</td>
-                        </tr>"""
-        
-        html_content += """
+                            <td>{{ event.type }}</td>
+                            <td>{{ event.count }}</td>
+                            <td>{{ "%.1f"|format(event.avg_risk) }}</td>
+                            <td class="{% if event.avg_risk >= 70 %}risk-high{% elif event.avg_risk >= 40 %}risk-medium{% else %}risk-low{% endif %}">
+                                {% if event.avg_risk >= 70 %}高风险{% elif event.avg_risk >= 40 %}中风险{% else %}低风险{% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
                     </tbody>
                 </table>
-            </div>"""
-        
-        # 金融活动分析
-        if financial_analysis:
-            query_stats = financial_analysis.get('query_statistics', {})
-            product_queries = financial_analysis.get('product_queries', [])
+            </div>
             
-            html_content += f"""
             <!-- 金融活动分析 -->
+            {% if data.financial_analysis %}
             <div class="section financial-section">
                 <h2>💰 金融活动分析</h2>
                 
                 <div class="stats-grid">
                     <div class="stat-card">
-                        <div class="stat-value">{query_stats.get('total_queries', 0)}</div>
+                        <div class="stat-value">{{ data.financial_analysis.query_statistics.total_queries }}</div>
                         <div class="stat-label">总查询数</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-value">{query_stats.get('financial_queries', 0)}</div>
+                        <div class="stat-value">{{ data.financial_analysis.query_statistics.financial_queries }}</div>
                         <div class="stat-label">金融相关查询</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-value">{query_stats.get('sensitive_queries', 0)}</div>
+                        <div class="stat-value">{{ data.financial_analysis.query_statistics.sensitive_queries }}</div>
                         <div class="stat-label">敏感查询</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-value">{query_stats.get('avg_response_time', 0):.1f}ms</div>
+                        <div class="stat-value">{{ "%.1f"|format(data.financial_analysis.query_statistics.avg_response_time) }}ms</div>
                         <div class="stat-label">平均响应时间</div>
                     </div>
                 </div>
@@ -474,26 +456,21 @@ class LettaAuditReportGenerator:
                     <thead>
                         <tr><th>查询类型</th><th>次数</th><th>平均风险分数</th></tr>
                     </thead>
-                    <tbody>"""
-            
-            for query in product_queries:
-                avg_risk = query.get('avg_risk', 0)
-                risk_class = 'risk-high' if avg_risk >= 70 else 'risk-medium' if avg_risk >= 40 else 'risk-low'
-                
-                html_content += f"""
+                    <tbody>
+                        {% for query in data.financial_analysis.product_queries %}
                         <tr>
-                            <td>{query.get('action', '未知')}</td>
-                            <td>{query.get('count', 0)}</td>
-                            <td class="{risk_class}">{avg_risk:.1f}</td>
-                        </tr>"""
-            
-            html_content += """
+                            <td>{{ query.action }}</td>
+                            <td>{{ query.count }}</td>
+                            <td class="{% if query.avg_risk >= 70 %}risk-high{% elif query.avg_risk >= 40 %}risk-medium{% else %}risk-low{% endif %}">
+                                {{ "%.1f"|format(query.avg_risk) }}
+                            </td>
+                        </tr>
+                        {% endfor %}
                     </tbody>
                 </table>
-            </div>"""
-        
-        # 用户活动统计
-        html_content += """
+            </div>
+            {% endif %}
+            
             <!-- 用户活动统计 -->
             <div class="section">
                 <h2>👥 用户活动统计</h2>
@@ -507,117 +484,103 @@ class LettaAuditReportGenerator:
                             <th>会话数</th>
                         </tr>
                     </thead>
-                    <tbody>"""
-        
-        for user in user_stats:
-            avg_risk = user.get('avg_risk', 0)
-            risk_class = 'risk-high' if avg_risk >= 70 else 'risk-medium' if avg_risk >= 40 else 'risk-low'
-            
-            html_content += f"""
+                    <tbody>
+                        {% for user in data.user_stats %}
                         <tr>
-                            <td>{user.get('user_id', '未知')}</td>
-                            <td>{user.get('event_count', 0)}</td>
-                            <td class="{risk_class}">{avg_risk:.1f}</td>
-                            <td>{user.get('high_risk_count', 0)}</td>
-                            <td>{user.get('session_count', 0)}</td>
-                        </tr>"""
-        
-        html_content += """
+                            <td>{{ user.user_id }}</td>
+                            <td>{{ user.event_count }}</td>
+                            <td class="{% if user.avg_risk >= 70 %}risk-high{% elif user.avg_risk >= 40 %}risk-medium{% else %}risk-low{% endif %}">
+                                {{ "%.1f"|format(user.avg_risk) }}
+                            </td>
+                            <td>{{ user.high_risk_count }}</td>
+                            <td>{{ user.session_count }}</td>
+                        </tr>
+                        {% endfor %}
                     </tbody>
                 </table>
-            </div>"""
-        
-        # 高风险事件详情
-        if high_risk_events:
-            html_content += """
+            </div>
+            
             <!-- 高风险事件详情 -->
+            {% if data.high_risk_events %}
             <div class="section">
-                <h2>🚨 高风险事件详情</h2>"""
-            
-            for event in high_risk_events:
-                html_content += f"""
+                <h2>🚨 高风险事件详情</h2>
+                {% for event in data.high_risk_events %}
                 <div class="alert alert-danger">
-                    <strong>{event.get('event_type', '未知')}</strong> (风险分数: {event.get('risk_score', 0)})
-                    <br>时间: {event.get('timestamp', '未知')}
-                    <br>用户: {event.get('user_id', '未知')}
-                    <br>操作: {event.get('action', '未知')}"""
-                
-                if event.get('error_message'):
-                    html_content += f"<br>错误: {event.get('error_message')}"
-                
-                html_content += "</div>"
+                    <strong>{{ event.event_type }}</strong> (风险分数: {{ event.risk_score }})
+                    <br>时间: {{ event.timestamp }}
+                    <br>用户: {{ event.user_id or "未知" }}
+                    <br>操作: {{ event.action }}
+                    {% if event.error_message %}
+                    <br>错误: {{ event.error_message }}
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
             
-            html_content += "</div>"
-        
-        # 合规违规事件
-        if compliance_violations:
-            html_content += """
             <!-- 合规违规事件 -->
+            {% if data.compliance_violations %}
             <div class="section">
-                <h2>⚖️ 合规违规事件</h2>"""
-            
-            for violation in compliance_violations:
-                compliance_flags = violation.get('compliance_flags', [])
-                flags_str = ', '.join(compliance_flags) if isinstance(compliance_flags, list) else str(compliance_flags)
-                
-                html_content += f"""
+                <h2>⚖️ 合规违规事件</h2>
+                {% for violation in data.compliance_violations %}
                 <div class="compliance-violation">
-                    <strong>{violation.get('event_type', '未知')}</strong>
-                    <br>时间: {violation.get('timestamp', '未知')}
-                    <br>用户: {violation.get('user_id', '未知')}
-                    <br>违规项: {flags_str}"""
-                
-                if violation.get('financial_category'):
-                    html_content += f"<br>金融类别: {violation.get('financial_category')}"
-                
-                html_content += "</div>"
+                    <strong>{{ violation.event_type }}</strong>
+                    <br>时间: {{ violation.timestamp }}
+                    <br>用户: {{ violation.user_id or "未知" }}
+                    <br>违规项: {{ violation.compliance_flags|join(", ") }}
+                    {% if violation.financial_category %}
+                    <br>金融类别: {{ violation.financial_category }}
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
             
-            html_content += "</div>"
-        
-        # 系统健康状态
-        total_events = basic_stats.get('total_events', 0)
-        high_risk_count = basic_stats.get('high_risk_events', 0)
-        
-        if high_risk_count == 0:
-            health_status = "success"
-            health_message = "✅ 系统运行正常，未检测到高风险事件"
-        elif high_risk_count < 5:
-            health_status = "warning"
-            health_message = "⚠️ 系统存在少量风险事件，建议关注"
-        else:
-            health_status = "danger"
-            health_message = "🚨 系统存在较多高风险事件，需要立即处理"
-        
-        html_content += f"""
             <!-- 系统健康状态 -->
             <div class="section">
                 <h2>🏥 系统健康状态</h2>
-                <div class="alert alert-{health_status}">
-                    {health_message}
+                {% set health_color = "success" if data.basic_stats.high_risk_events == 0 else "warning" if data.basic_stats.high_risk_events < 5 else "danger" %}
+                <div class="alert alert-{{ health_color }}">
+                    {% if data.basic_stats.high_risk_events == 0 %}
+                        ✅ 系统运行正常，未检测到高风险事件
+                    {% elif data.basic_stats.high_risk_events < 5 %}
+                        ⚠️ 系统存在少量风险事件，建议关注
+                    {% else %}
+                        🚨 系统存在较多高风险事件，需要立即处理
+                    {% endif %}
                 </div>
                 
                 <h3>📊 风险分布</h3>
-                <div>"""
-        
-        if total_events > 0:
-            high_pct = (high_risk_count * 100 / total_events)
-            medium_pct = (basic_stats.get('medium_risk_events', 0) * 100 / total_events)
-            low_pct = (basic_stats.get('low_risk_events', 0) * 100 / total_events)
-            
-            html_content += f"""
-                    <div>高风险事件: {high_risk_count} ({high_pct:.1f}%)</div>
-                    <div>中风险事件: {basic_stats.get('medium_risk_events', 0)} ({medium_pct:.1f}%)</div>
-                    <div>低风险事件: {basic_stats.get('low_risk_events', 0)} ({low_pct:.1f}%)</div>"""
-        
-        html_content += """
+                <div class="chart-container">
+                    {% set total = data.basic_stats.total_events %}
+                    {% if total > 0 %}
+                    <div>高风险事件: {{ data.basic_stats.high_risk_events }} ({{ "%.1f"|format(data.basic_stats.high_risk_events * 100 / total) }}%)</div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: {{ data.basic_stats.high_risk_events * 100 / total }}%; background-color: #e74c3c;"></div>
+                    </div>
+                    
+                    <div>中风险事件: {{ data.basic_stats.medium_risk_events }} ({{ "%.1f"|format(data.basic_stats.medium_risk_events * 100 / total) }}%)</div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: {{ data.basic_stats.medium_risk_events * 100 / total }}%; background-color: #f39c12;"></div>
+                    </div>
+                    
+                    <div>低风险事件: {{ data.basic_stats.low_risk_events }} ({{ "%.1f"|format(data.basic_stats.low_risk_events * 100 / total) }}%)</div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: {{ data.basic_stats.low_risk_events * 100 / total }}%; background-color: #27ae60;"></div>
+                    </div>
+                    {% endif %}
                 </div>
             </div>
         </div>
     </div>
 </body>
-</html>"""
+</html>
+        """
         
-        # 写入文件
+        from jinja2 import Template
+        template = Template(html_template)
+        html_content = template.render(data=data)
+        
         with open(filepath, 'w', encoding='utf-8') as f:
             f.write(html_content)
     
