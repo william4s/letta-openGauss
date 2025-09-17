@@ -1,0 +1,271 @@
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Letta审计系统仪表板</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .metric-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 10px 0;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .metric-value {
+            font-size: 2.5rem;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .metric-label {
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+        .risk-high { background: linear-gradient(135deg, #ff4757, #ff3838); }
+        .risk-medium { background: linear-gradient(135deg, #ffa502, #ff8c00); }
+        .risk-low { background: linear-gradient(135deg, #2ed573, #00b894); }
+        .chart-container {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 10px 0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .navbar-brand {
+            font-weight: bold;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .status-online { background-color: #2ed573; }
+        .status-offline { background-color: #ff4757; }
+    </style>
+</head>
+<body class="bg-light">
+    <nav class="navbar navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="#">
+                <i class="fas fa-shield-alt me-2"></i>
+                Letta审计系统仪表板
+            </a>
+            <div class="d-flex align-items-center">
+                <span id="connection-status" class="text-light me-3">
+                    <span class="status-indicator status-online"></span>
+                    连接正常
+                </span>
+                <button class="btn btn-outline-light btn-sm" onclick="downloadReport()">
+                    <i class="fas fa-download me-1"></i>下载报告
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid mt-4">
+        <!-- 统计卡片 -->
+        <div class="row">
+            <div class="col-md-3">
+                <div class="metric-card">
+                    <div class="metric-value" id="total-events">-</div>
+                    <div class="metric-label">
+                        <i class="fas fa-list me-1"></i>总事件数
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="metric-card risk-high">
+                    <div class="metric-value" id="high-risk-events">-</div>
+                    <div class="metric-label">
+                        <i class="fas fa-exclamation-triangle me-1"></i>高风险事件
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="metric-card risk-medium">
+                    <div class="metric-value" id="financial-events">-</div>
+                    <div class="metric-label">
+                        <i class="fas fa-dollar-sign me-1"></i>金融事件
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="metric-card risk-low">
+                    <div class="metric-value" id="compliance-score">-</div>
+                    <div class="metric-label">
+                        <i class="fas fa-check-circle me-1"></i>合规评分
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 图表 -->
+        <div class="row">
+            <div class="col-md-6">
+                <div class="chart-container">
+                    <h5><i class="fas fa-chart-pie me-2"></i>风险分布</h5>
+                    <div id="risk-distribution-chart"></div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="chart-container">
+                    <h5><i class="fas fa-chart-line me-2"></i>事件趋势</h5>
+                    <div id="timeline-chart"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 最近事件表 -->
+        <div class="row">
+            <div class="col-12">
+                <div class="chart-container">
+                    <h5><i class="fas fa-history me-2"></i>最近事件</h5>
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>时间</th>
+                                    <th>类型</th>
+                                    <th>用户</th>
+                                    <th>操作</th>
+                                    <th>风险评分</th>
+                                    <th>状态</th>
+                                </tr>
+                            </thead>
+                            <tbody id="events-table">
+                                <tr><td colspan="6" class="text-center">加载中...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // 全局状态
+        let updateInterval;
+        
+        // 初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            updateDashboard();
+            startAutoUpdate();
+        });
+        
+        // 更新仪表板数据
+        async function updateDashboard() {
+            try {
+                await Promise.all([
+                    updateStats(),
+                    updateCharts(),
+                    updateEvents()
+                ]);
+                updateConnectionStatus(true);
+            } catch (error) {
+                console.error('更新仪表板失败:', error);
+                updateConnectionStatus(false);
+            }
+        }
+        
+        // 更新统计信息
+        async function updateStats() {
+            const response = await fetch('/api/stats');
+            const stats = await response.json();
+            
+            document.getElementById('total-events').textContent = stats.total_events || 0;
+            document.getElementById('high-risk-events').textContent = stats.high_risk_events || 0;
+            document.getElementById('financial-events').textContent = stats.financial_events || 0;
+            
+            // 更新合规评分
+            const complianceResponse = await fetch('/api/compliance');
+            const compliance = await complianceResponse.json();
+            document.getElementById('compliance-score').textContent = 
+                Math.round(compliance.overall_score || 0) + '%';
+        }
+        
+        // 更新图表
+        async function updateCharts() {
+            // 风险分布图
+            const riskResponse = await fetch('/api/charts/risk_distribution');
+            const riskData = await riskResponse.json();
+            Plotly.newPlot('risk-distribution-chart', riskData.data, riskData.layout, {responsive: true});
+            
+            // 事件时间线
+            const timelineResponse = await fetch('/api/charts/event_timeline');
+            const timelineData = await timelineResponse.json();
+            Plotly.newPlot('timeline-chart', timelineData.data, timelineData.layout, {responsive: true});
+        }
+        
+        // 更新事件表
+        async function updateEvents() {
+            const response = await fetch('/api/events?limit=10');
+            const events = await response.json();
+            
+            const tbody = document.getElementById('events-table');
+            if (events.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center">暂无事件</td></tr>';
+                return;
+            }
+            
+            tbody.innerHTML = events.map(event => `
+                <tr>
+                    <td>${formatTime(event.timestamp)}</td>
+                    <td><span class="badge bg-info">${event.event_type}</span></td>
+                    <td>${event.user_id || 'N/A'}</td>
+                    <td>${event.action}</td>
+                    <td>
+                        <span class="badge ${getRiskBadgeClass(event.risk_score)}">
+                            ${event.risk_score}
+                        </span>
+                    </td>
+                    <td>
+                        <i class="fas ${event.success ? 'fa-check-circle text-success' : 'fa-times-circle text-danger'}"></i>
+                    </td>
+                </tr>
+            `).join('');
+        }
+        
+        // 辅助函数
+        function formatTime(timestamp) {
+            return new Date(timestamp).toLocaleString('zh-CN');
+        }
+        
+        function getRiskBadgeClass(score) {
+            if (score >= 70) return 'bg-danger';
+            if (score >= 40) return 'bg-warning';
+            return 'bg-success';
+        }
+        
+        function updateConnectionStatus(isOnline) {
+            const statusEl = document.getElementById('connection-status');
+            const indicator = statusEl.querySelector('.status-indicator');
+            
+            if (isOnline) {
+                indicator.className = 'status-indicator status-online';
+                statusEl.innerHTML = '<span class="status-indicator status-online"></span>连接正常';
+            } else {
+                indicator.className = 'status-indicator status-offline';
+                statusEl.innerHTML = '<span class="status-indicator status-offline"></span>连接异常';
+            }
+        }
+        
+        // 自动更新
+        function startAutoUpdate() {
+            updateInterval = setInterval(updateDashboard, 30000); // 30秒更新一次
+        }
+        
+        // 下载报告
+        function downloadReport() {
+            window.open('/api/report/download?format=html&hours=24', '_blank');
+        }
+    </script>
+</body>
+</html>

@@ -100,8 +100,8 @@ def requires_auto_tool_choice(llm_config: LLMConfig) -> bool:
     if "together.ai" in llm_config.model_endpoint or "together.xyz" in llm_config.model_endpoint:
         return True
     # 暂时禁用vLLM的auto tool choice以避免兼容性问题
-    # if llm_config.handle and "vllm" in llm_config.handle:
-    #     return True
+    if llm_config.handle and "vllm" in llm_config.handle:
+        return True
     return False
 
 
