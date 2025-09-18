@@ -93,10 +93,13 @@ class EmbeddingConfig(BaseModel):
 
 
         if model_name == "bge-m3" and provider == "bge":
+            # Get endpoint from environment variable or use default
+            import os
+            endpoint = os.getenv("BGE_API_BASE", "http://127.0.0.1:8003/v1")
             return cls(
                 embedding_model="bge-m3",
                 embedding_endpoint_type="openai",
-                embedding_endpoint="https://127.0.0.1:8003/v1",
+                embedding_endpoint=endpoint,
                 embedding_dim=1024,
                 embedding_chunk_size=300,
             )

@@ -91,9 +91,15 @@ class ModelSettings(BaseSettings):
     # openai
     # openai_api_key: Optional[str] = None
     openai_api_key: Optional[str] = '1'
-    openai_api_base: str = "http://127.0.0.1:8000/v1"
+    openai_api_base: str = Field(
+        default="http://127.0.0.1:8000/v1",
+        validation_alias="OPENAI_API_BASE"
+    )
     bge_api_key: Optional[str] = '1'
-    bge_api_base: str = "http://127.0.0.1:8003/v1"
+    bge_api_base: str = Field(
+        default="http://127.0.0.1:8003/v1",
+        validation_alias="BGE_API_BASE"
+    )
     # openai_api_base: str = Field(
     #     default="http://127.0.0.1:8000/v1",
     #     # NOTE: We previously used OPENAI_API_BASE, but this was deprecated in favor of OPENAI_BASE_URL
@@ -144,7 +150,10 @@ class ModelSettings(BaseSettings):
     together_api_key: Optional[str] = None
 
     # vLLM
-    vllm_api_base: Optional[str] = "http://127.0.0.1:8003/v1"
+    vllm_api_base: Optional[str] = Field(
+        default="http://127.0.0.1:8000/v1",
+        validation_alias="VLLM_API_BASE"
+    )
 
     # lmstudio
     lmstudio_base_url: Optional[str] = None
