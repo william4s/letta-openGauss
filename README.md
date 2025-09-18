@@ -6,22 +6,64 @@
 
 ## ✨ 核心特性
 
-- 🔍 **智能文档处理**: 自动解析PDF文档并进行语义分块
-- 🧠 **高质量向量化**: 支持BGE-M3等模型生成1024维向量表示
-- 💾 **向量数据库**: 基于OpenGauss的高性能向量存储
-- 🎯 **语义检索**: 余弦相似度匹配，精准找到相关内容
-- 💬 **智能问答**: 结合检索结果生成准确回答
-- 🚀 **快速部署**: 一键启动完整RAG系统
+### 🔍 **RAG智能文档处理系统**
+- **智能文档处理**: 自动解析PDF文档并进行语义分块
+- **高质量向量化**: 支持BGE-M3等模型生成1024维向量表示
+- **向量数据库**: 基于OpenGauss的高性能向量存储
+- **语义检索**: 余弦相似度匹配，精准找到相关内容
+- **智能问答**: 结合检索结果生成准确回答
+
+### 🛡️ **企业级安全审计系统**
+- **实时审计监控**: 完整记录所有用户交互和系统操作
+- **多维度安全分析**: 用户行为、访问控制、数据操作全面监控
+- **可视化审计报告**: 生成HTML格式的审计报告和合规性分析
+- **异常检测**: 智能识别可疑操作和安全威胁
+- **审计数据存储**: 支持SQLite和OpenGauss双重存储方案
+
+### 🚀 **高性能集成架构**
+- **OpenGauss向量存储**: 支持高维向量的快速相似度搜索
+- **BGE-M3嵌入模型**: 中文优化的高质量文本向量化
+- **Memory Block架构**: 基于Letta的长期记忆管理
+- **RESTful API**: 完整的REST API接口支持
+- **环境变量配置**: 灵活的服务端点配置，支持.env文件
+- **一键部署**: Docker容器化部署方案
+
+### 📊 **可视化监控面板**
+- **综合审计仪表板**: 实时显示系统状态和审计信息
+- **交互式数据展示**: 支持图表、统计和详细日志查看
+- **多模板支持**: 提供多种审计报告模板
+- **Web界面**: 直观的网页界面管理和监控
+
+### 🔧 **开发友好特性**
+- **模块化设计**: 清晰的代码结构，易于扩展和维护
+- **丰富的示例**: 提供多种RAG实现示例和使用模板
+- **配置检查工具**: 自动环境配置验证和故障排除
+- **测试覆盖**: 完整的单元测试和集成测试
 
 ## 🏗️ 系统架构
 
 ```
-PDF文档 → 文本提取 → 智能分块 → BGE-M3向量化 → 存储在memory_block中 
+                          Letta-OpenGauss RAG + 审计系统
+                                    
+PDF文档 → 文本提取 → 智能分块 → BGE-M3向量化 → Memory Block存储
                                                         ↓
-用户问题 → 问题向量化 → 相似度检索 ← OpenGauss向量数据库查询 ← OpenGauss存储
+用户问题 → 问题向量化 → 相似度检索 ← OpenGauss向量数据库 ← 向量索引
    ↓                                    ↓
-答案生成 ← 上下文增强 ← 检索结果排序
+答案生成 ← 上下文增强 ← 检索结果排序    ← RAG Pipeline
+   ↓
+[审计系统监控层]
+   ↓                    ↓                    ↓
+用户交互审计 → 操作日志记录 → 安全事件分析 → 审计数据库存储
+   ↓                    ↓                    ↓
+实时监控 → 可视化报告 → 合规性检查 → 审计仪表板
 ```
+
+### 主要组件
+- **RAG引擎**: 基于Letta的记忆管理和向量检索
+- **OpenGauss数据库**: 高性能向量存储和传统关系数据
+- **BGE-M3模型**: 中文优化的embedding模型
+- **审计系统**: 全链路操作监控和安全审计
+- **可视化面板**: Web界面的监控和报告系统
 
 ## 🚀 快速开始
 
@@ -78,6 +120,58 @@ python letta/examples/memory_block_rag.py /path/to/your/document.pdf
 ```
 
 ## 💡 使用示例
+
+### 🔍 RAG智能问答
+```bash
+# 基础RAG演示 - 使用内存块存储
+python letta/examples/memory_block_rag.py
+
+# 带PDF文档的RAG问答
+python letta/examples/memory_block_rag.py /path/to/your/document.pdf
+
+# 简化版RAG系统
+python letta/examples/simple_letta_rag.py
+
+# 存档记忆RAG (用于大文档)
+python letta/examples/archival_memory_rag.py
+```
+
+### 🛡️ 安全审计功能
+```bash
+# 启动带审计功能的RAG系统
+python letta/examples/audited_memory_rag.py
+
+# 生成综合审计仪表板
+python letta/examples/comprehensive_audit_dashboard.py
+
+# 最终审计报告生成器
+python letta/examples/final_audit_dashboard.py
+
+# 分析已有审计日志
+python analyze_audit_logs.py
+```
+
+### 📊 监控与可视化
+```bash
+# 查看审计报告 (会在浏览器中自动打开)
+# 报告位置: letta/examples/reports/
+# 模板位置: letta/examples/templates/
+
+# 启动综合可视化面板
+python letta/examples/comprehensive_audit_dashboard.py
+```
+
+### 🔧 系统管理工具
+```bash
+# OpenGauss数据库兼容性迁移
+python migrate_to_opengauss_compatibility.py
+
+# 向量存储修复工具
+python simple_vector_fix.py
+
+# RAG系统状态检查
+python check_rag_system.py
+```
 
 ### 基础用法
 
@@ -246,6 +340,36 @@ TOP_K = 3             # 检索文档数量
 - 支持语言: 中文、英文
 - 文档格式: PDF、TXT
 
+## 🎯 项目亮点总结
+
+### 🔥 本项目在原始Letta基础上的创新增强
+
+| 功能模块 | 原有能力 | 增强特性 |
+|---------|---------|---------|
+| **数据存储** | PostgreSQL | ✅ **OpenGauss向量数据库**集成，支持高维向量检索 |
+| **Embedding** | OpenAI embedding | ✅ **BGE-M3中文优化**模型，1024维高质量向量 |
+| **记忆管理** | 基础记忆 | ✅ **Memory Block智能分块**，语义级文档处理 |
+| **安全审计** | 无 | 🆕 **企业级安全审计系统**，全链路操作监控 |
+| **可视化** | 命令行 | 🆕 **Web可视化仪表板**，实时监控和报告 |
+| **配置管理** | 硬编码 | ✅ **环境变量配置**，灵活的服务端点管理 |
+| **部署方式** | 手动配置 | ✅ **Docker容器化**，一键启动完整系统 |
+
+### 📊 技术栈升级
+
+- **数据库**: PostgreSQL → **OpenGauss** (向量数据库)
+- **向量化**: OpenAI → **BGE-M3** (中文优化)
+- **存储架构**: 传统存储 → **Memory Block** (智能分块)
+- **监控体系**: 无 → **审计系统** (全链路监控)
+- **用户界面**: CLI → **Web Dashboard** (可视化管理)
+
+### 🚀 生产级特性
+- ✅ 企业级安全审计和合规性检查
+- ✅ 高性能向量相似度搜索
+- ✅ 中文文档处理优化
+- ✅ 可视化监控和报告系统
+- ✅ 容器化部署和环境变量管理
+- ✅ 完整的测试覆盖和故障排除工具
+
 ## 🤝 贡献指南
 
 1. Fork 项目
@@ -260,9 +384,38 @@ TOP_K = 3             # 检索文档数量
 
 ## 🆘 获取帮助
 
-- 📖 查看 [详细使用文档](RAG_USAGE_GUIDE.md)
-- 🔍 运行 [环境检查脚本](jr_config_check.py)
+- 📖 查看详细使用文档 (项目内多个markdown文档)
+- 🔍 运行环境检查脚本: `python check_rag_system.py`
 - 🐛 提交 [Issue](../../issues) 报告问题
 - 💬 参与 [讨论](../../discussions)
+
+## 🎉 快速验证系统功能
+
+运行以下命令验证各个组件是否正常工作：
+
+```bash
+# 1. 基础RAG功能验证
+python letta/examples/memory_block_rag.py
+
+# 2. 审计系统验证
+python letta/examples/audited_memory_rag.py
+
+# 3. 可视化面板验证
+python letta/examples/comprehensive_audit_dashboard.py
+
+# 4. 系统配置检查
+python check_rag_system.py
+
+# 5. 环境变量配置验证
+python -c "
+from letta.settings import ModelSettings
+settings = ModelSettings()
+print('✅ OpenAI API Base:', settings.openai_api_base)
+print('✅ BGE API Base:', settings.bge_api_base)
+print('✅ vLLM API Base:', settings.vllm_api_base)
+"
+```
+
+看到所有 "✅" 表示系统部署成功！
 
 **🚀 开始您的RAG之旅吧！**
