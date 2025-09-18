@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 带审计功能的Memory Blocks RAG系统
-不仅监控API操作，还审计用户问题、LLM回答、敏感信息等
+完整记录知识库生命周期、RAG查询流程和安全事件
 """
 
 import os
@@ -10,10 +10,12 @@ import time
 import json
 import sqlite3
 import hashlib
-from pathlib import Path
-from typing import List, Dict, Optional
-from datetime import datetime, timezone
+import uuid
+import datetime
 import re
+from pathlib import Path
+from typing import List, Dict, Optional, Any
+from datetime import timezone
 
 # 添加letta模块路径
 current_dir = Path(__file__).parent
@@ -143,7 +145,7 @@ class RAGAuditor:
         
         # 生成会话ID
         if not session_id:
-            session_id = hashlib.md5(f"{user_id}{datetime.now().isoformat()}".encode()).hexdigest()[:16]
+            session_id = hashlib.md5(f"{user_id}{datetime.datetime.now().isoformat()}".encode()).hexdigest()[:16]
         
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
@@ -156,7 +158,7 @@ class RAGAuditor:
                 ip_address, user_agent, metadata
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            datetime.now(timezone.utc).isoformat(),
+            datetime.datetime.now(timezone.utc).isoformat(),
             session_id,
             user_id,
             "CONVERSATION",
@@ -187,8 +189,8 @@ class RAGAuditor:
     
     def get_conversation_stats(self, hours: int = 24) -> dict:
         """获取对话统计"""
-        since_time = (datetime.now(timezone.utc).timestamp() - hours * 3600)
-        since_iso = datetime.fromtimestamp(since_time, timezone.utc).isoformat()
+        since_time = (datetime.datetime.now(timezone.utc).timestamp() - hours * 3600)
+        since_iso = datetime.datetime.fromtimestamp(since_time, timezone.utc).isoformat()
         
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
@@ -228,7 +230,7 @@ class AuditedMemoryBlockRAG:
         self.text_chunks = []
         self.agent = None
         self.auditor = RAGAuditor()
-        self.session_id = hashlib.md5(f"rag_session_{datetime.now().isoformat()}".encode()).hexdigest()[:16]
+        self.session_id = hashlib.md5(f"rag_session_{datetime.datetime.now().isoformat()}".encode()).hexdigest()[:16]
         
     def extract_text_from_pdf(self, pdf_path: str) -> str:
         """从PDF文件中提取文本"""

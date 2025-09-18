@@ -1,96 +1,273 @@
-# Letta-OpenGauss RAG系统
+# Letta-OpenGauss RAG
 
-## 🎯 项目概述
+一个集成了 Letta (memGPT) 与 OpenGauss 向量数据库的 RAG 系统。项目核心是提供一个生产可用的、自带审计功能的 PDF 文档问答解决方案。
 
-基于Letta(memGPT)和OpenGauss构建的高性能RAG（Retrieval-Augmented Generation）记忆系统，支持PDF文档的智能问答并带有审计系统。
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![Docker](https://img.shields.io/badge/docker-supported-blue.svg)](https://www.docker.com/)
 
-## ✨ 核心特性
+## 项目解决的问题
 
-### 🔍 **RAG智能文档处理系统**
-- **智能文档处理**: 自动解析PDF文档并进行语义分块
-- **高质量向量化**: 支持BGE-M3等模型生成1024维向量表示
-- **向量数据库**: 基于OpenGauss的高性能向量存储
-- **语义检索**: 余弦相似度匹配，精准找到相关内容
-- **智能问答**: 结合检索结果生成准确回答
+目前市面上的 RAG 实现大多集中在核心的检索和生成逻辑上，但在企业场景中同样重要的**数据存储选型**和**系统可审计性**却关注较少。
 
-### 🛡️ **企业级安全审计系统**
-- **实时审计监控**: 完整记录所有用户交互和系统操作
-- **多维度安全分析**: 用户行为、访问控制、数据操作全面监控
-- **可视化审计报告**: 生成HTML格式的审计报告和合规性分析
-- **异常检测**: 智能识别可疑操作和安全威胁
-- **审计数据存储**: 支持SQLite和OpenGauss双重存储方案
+本项目旨在解决这一问题：
 
-### 🚀 **高性能集成架构**
-- **OpenGauss向量存储**: 支持高维向量的快速相似度搜索
-- **BGE-M3嵌入模型**: 中文优化的高质量文本向量化
-- **Memory Block架构**: 基于Letta的长期记忆管理
-- **RESTful API**: 完整的REST API接口支持
-- **环境变量配置**: 灵活的服务端点配置，支持.env文件
-- **一键部署**: Docker容器化部署方案
+1. **存储选型**: 相比常见的 `PostgreSQL + pgvector` 方案，OpenGauss 在处理大规模向量数据时表现更佳，拥有更成熟的企业级特性
+2. **记忆管理**: 基于 Letta (memGPT) 的长期记忆机制，构建了 `Memory Block` 架构，优化了长文档的语义理解
+3. **审计需求**: 在金融、法务等领域，AI 系统的每次调用都需要可追溯。我们从设计之初就内置了完整的审计日志和报告功能
 
-### 📊 **可视化监控面板**
-- **综合审计仪表板**: 实时显示系统状态和审计信息
-- **交互式数据展示**: 支持图表、统计和详细日志查看
-- **多模板支持**: 提供多种审计报告模板
-- **Web界面**: 直观的网页界面管理和监控
+## 核心优势
 
-### 🔧 **开发友好特性**
-- **模块化设计**: 清晰的代码结构，易于扩展和维护
-- **丰富的示例**: 提供多种RAG实现示例和使用模板
-- **配置检查工具**: 自动环境配置验证和故障排除
-- **测试覆盖**: 完整的单元测试和集成测试
+| 功能模块 | 原始 Letta | 本项目增强 |
+|---------|------------|------------|
+| **数据存储** | PostgreSQL | **OpenGauss向量数据库**，支持大规模向量检索 |
+| **Embedding** | OpenAI embedding | **BGE-M3中文优化**模型，1024维高质量向量 |
+| **记忆管理** | 基础记忆 | **Memory Block智能分块**，语义级文档处理 |
+| **安全审计** | 无 | **完整审计系统**，全链路操作监控 |
+| **可视化** | 命令行 | **Web审计仪表板**，实时监控和报告 |
+| **配置管理** | 硬编码 | **环境变量配置**，灵活的服务端点管理 |
+| **部署方式** | 手动配置 | **Docker容器化**，一键启动完整系统 |
 
-## 🏗️ 系统架构
+## 系统架构
 
+```mermaid
+graph TD
+    subgraph "数据处理流水线"
+        A[PDF文档] --> B[文本提取]
+        B --> C[语义分块]
+        C --> D{BGE-M3模型}
+        D --> E[向量化 1024维]
+        E --> F[Memory Block存储]
+    end
+
+    subgraph "问答与检索"
+        G[用户问题] --> D
+        D --> H[问题向量 q]
+        F --> I[(OpenGauss向量数据库)]
+        H --> I
+        I -- 相似度检索 --> J[Top-K结果]
+        J --> K[上下文增强]
+        K --> L[LLM答案生成]
+        L --> M[最终答案]
+    end
+
+    subgraph "审计系统 - 全程监控"
+        G -.交互记录.-> S[操作日志]
+        L -.生成记录.-> S
+        I -.查询记录.-> S
+        S --> T[安全分析]
+        T --> U[(审计数据库)]
+        U --> V[可视化报告/仪表板]
+    end
+
+    style G fill:#e1f5fe
+    style M fill:#f3e5f5
+    style V fill:#fff3e0
 ```
-                          Letta-OpenGauss RAG + 审计系统
-                                    
-PDF文档 → 文本提取 → 智能分块 → BGE-M3向量化 → Memory Block存储
-                                                        ↓
-用户问题 → 问题向量化 → 相似度检索 ← OpenGauss向量数据库 ← 向量索引
-   ↓                                    ↓
-答案生成 ← 上下文增强 ← 检索结果排序    ← RAG Pipeline
-   ↓
-[审计系统监控层]
-   ↓                    ↓                    ↓
-用户交互审计 → 操作日志记录 → 安全事件分析 → 审计数据库存储
-   ↓                    ↓                    ↓
-实时监控 → 可视化报告 → 合规性检查 → 审计仪表板
+
+**主要组件**:
+- **RAG引擎**: Letta记忆管理 + 向量检索
+- **OpenGauss数据库**: 向量存储 + 关系数据存储
+- **BGE-M3模型**: 中文优化的embedding模型  
+- **审计系统**: 全链路操作监控
+- **Web仪表板**: 实时监控和报告
+
+## 快速上手
+
+**系统要求**: Python 3.8+, Docker & Docker Compose, 4GB+ 内存
+
+### 推荐方式：Docker Compose 一键部署
+
+```bash
+# 1. 克隆项目
+git clone https://github.com/william4s/letta-openGauss.git
+cd letta-openGauss
+
+# 2. 配置环境变量（重要！）
+cp .env.example .env
+# 编辑 .env 文件，配置你的 LLM 和 Embedding 服务地址
+
+# 3. 启动完整系统
+docker-compose -f docker-compose.opengauss.yml up -d
+
+# 4. 验证部署
+curl http://localhost:8283/v1/health
+docker-compose -f docker-compose.opengauss.yml ps
 ```
 
-### 主要组件
-- **RAG引擎**: 基于Letta的记忆管理和向量检索
-- **OpenGauss数据库**: 高性能向量存储和传统关系数据
-- **BGE-M3模型**: 中文优化的embedding模型
-- **审计系统**: 全链路操作监控和安全审计
-- **可视化面板**: Web界面的监控和报告系统
+🎉 **就这么简单！** 系统包含：
+- OpenGauss 向量数据库 (端口5432)
+- Letta 服务器 (端口8283)  
+- 可选的 BGE Embedding 服务 (端口8003)
+- 可选的 vLLM 服务 (端口8000)
 
-## 🚀 快速开始
+<details>
+<summary><b>其他部署方式（点击展开）</b></summary>
 
-### 1. 环境准备
+### 方式2：单独Docker构建
+```bash
+# 使用OpenGauss优化版本
+docker build -f Dockerfile.opengauss -t letta-opengauss:latest .
 
-#### 系统要求
-- Python 3.8+
-- Docker
-- 4GB+ 可用内存
+# 先启动数据库
+docker run --name opengauss \
+  -e GS_PASSWORD=Enmo@123 \
+  -p 5432:5432 -d enmotech/opengauss:latest
+
+# 再启动服务
+docker run --name letta-server \
+  --env-file .env --link opengauss \
+  -p 8283:8283 letta-opengauss:latest
+```
+
+### 方式3：手动部署
+```bash
+# 启动OpenGauss数据库
+docker run --name opengauss \
+  -e GS_PASSWORD=Enmo@123 \
+  -p 5432:5432 -d enmotech/opengauss:latest
+
+# 安装依赖（需要先安装uv）
+cd letta-openGauss
+eval $(uv env activate)
+uv sync --all-extras
+
+# 配置环境变量
+cp .env.example .env
+# 编辑 .env 文件
+
+# 启动服务
+python -m letta.server
+```
+
+</details>
+
+<details>
+<summary><b>示例 .env 配置（点击展开）</b></summary>
+
+```bash
+# OpenGauss 数据库配置
+LETTA_ENABLE_OPENGAUSS=true
+LETTA_PG_HOST=localhost  # Docker部署时改为 opengauss
+LETTA_PG_PORT=5432
+LETTA_PG_DB=letta
+LETTA_PG_USER=opengauss  
+LETTA_PG_PASSWORD=0pen_gauss
+LETTA_PG_URI=postgresql://opengauss:0pen_gauss@localhost:5432/letta
+
+# LLM API 配置
+OPENAI_API_BASE=http://127.0.0.1:8000/v1    # 你的LLM服务地址
+VLLM_API_BASE=http://127.0.0.1:8000/v1
+
+# Embedding API 配置  
+BGE_API_BASE=http://127.0.0.1:8003/v1       # 你的Embedding服务地址
+EMBEDDING_API_BASE=http://127.0.0.1:8003/v1
+```
+
+</details>
+
+```bash
+docker-compose logs -f letta_server
+```
+
+#### 方式2：单独构建和运行
+```bash
+# 1. 构建Docker镜像
+docker build -t letta-opengauss:latest .
+
+# 2. 启动OpenGauss数据库
+docker run --name opengauss \
+  -e GS_PASSWORD=0pen_gauss \
+  -p 5432:5432 \
+  -d opengauss/opengauss:latest
+
+# 3. 启动Letta服务器
+docker run --name letta-server \
+  --env-file .env \
+  --link opengauss:opengauss \
+  -p 8283:8283 \
+  -v $(pwd)/logs:/app/logs \
+  letta-opengauss:latest
+```
+
+### 📦 Docker镜像说明
+
+#### 项目提供的Docker文件
+
+1. **`Dockerfile`** - 原始Letta Docker配置（基于pgvector）
+2. **`Dockerfile.opengauss`** - 🆕 OpenGauss优化版本（推荐）
+3. **`docker-compose.opengauss.yml`** - 🆕 完整栈部署配置
+
+#### 使用OpenGauss优化版本
+```bash
+# 使用OpenGauss优化的Dockerfile构建
+docker build -f Dockerfile.opengauss -t letta-opengauss:latest .
+
+# 使用完整栈docker-compose部署
+docker-compose -f docker-compose.opengauss.yml up -d
+```
+
+#### Docker环境变量配置
+```bash
+# .env文件示例（Docker专用）
+LETTA_ENABLE_OPENGAUSS=true
+LETTA_PG_HOST=opengauss
+LETTA_PG_PORT=5432
+LETTA_PG_DB=letta
+LETTA_PG_USER=opengauss
+LETTA_PG_PASSWORD=0pen_gauss
+
+# API服务配置（Docker内部网络）
+OPENAI_API_BASE=http://vllm-service:8000/v1
+BGE_API_BASE=http://bge-embedding:8003/v1
+VLLM_API_BASE=http://vllm-service:8000/v1
+
+# 外部访问端口
+LETTA_SERVER_PORT=8283
+BGE_API_PORT=8003
+VLLM_API_PORT=8000
+```
+
+#### 🔧 Docker服务管理
+```bash
+# 启动所有服务
+docker-compose -f docker-compose.opengauss.yml up -d
+
+# 查看服务状态
+docker-compose -f docker-compose.opengauss.yml ps
+
+# 查看日志
+docker-compose -f docker-compose.opengauss.yml logs -f letta-server
+
+# 进入容器调试
+docker exec -it letta-server bash
+
+# 停止所有服务
+docker-compose -f docker-compose.opengauss.yml down
+
+# 清理数据（谨慎使用）
+docker-compose -f docker-compose.opengauss.yml down -v
+```
+
+### 3. 手动部署
 
 #### 启动必要服务
 
 
-# 1. 启动OpenGauss数据库
+#### 1. 启动OpenGauss数据库
 ```bash
 docker run --name opengauss \
-  -e GS_PASSWORD=Enmo@123 \
+  -e GS_PASSWORD=0pen_gauss \
   -p 5432:5432 \
-  -d enmotech/opengauss:latest
+  -d opengauss/opengauss:latest
 ```
 
-# 2.  Clone仓库代码
+#### 2.  Clone仓库代码
 ```bash
 git clone https://github.com/william4s/letta-openGauss.git
 ```
 
-# 3. 安装依赖和配置环境
+#### 3. 安装依赖和配置环境
 首先安装uv，按照[官方教程](https://docs.astral.sh/uv/getting-started/installation/)即可
 
 当uv安装成功，我们可以使用uv来启动Letta项目代码
@@ -100,7 +277,7 @@ eval $(uv env activate)
 uv sync --all-extras
 ```
 
-# 4. 配置环境变量
+#### 4. 配置环境变量
 ```bash
 # 复制示例配置文件
 cp .env.example .env
@@ -110,79 +287,128 @@ cp .env.example .env
 nano .env
 ```
 
-### 2. 一键演示
 
+## 使用示例
+
+请先将letta server启动成功
+
+### RAG文档问答
 ```bash
-# 运行完整RAG演示
+# 基础RAG演示 - 使用Memory Block存储
 python letta/examples/memory_block_rag.py
 
-python letta/examples/memory_block_rag.py /path/to/your/document.pdf
-```
-
-## 💡 使用示例
-
-### 🔍 RAG智能问答
-```bash
-# 基础RAG演示 - 使用内存块存储
-python letta/examples/memory_block_rag.py
-
-# 带PDF文档的RAG问答
+# 指定PDF文档的问答
 python letta/examples/memory_block_rag.py /path/to/your/document.pdf
 
-# 简化版RAG系统
-python letta/examples/simple_letta_rag.py
-
-# 存档记忆RAG (用于大文档)
-python letta/examples/archival_memory_rag.py
+# 带审计模块RAG
+python letta/examples/audited_memory_rag.py
 ```
 
-### 🛡️ 安全审计功能
+### 🛡️ 审计系统功能
+
+我们实现了完整的RAG系统审计机制，用于记录和分析系统运行的关键事件。
+
+#### 带审计功能的RAG系统
 ```bash
-# 启动带审计功能的RAG系统
+# 运行带审计功能的RAG问答系统
 python letta/examples/audited_memory_rag.py
 
-# 生成综合审计仪表板
+# 指定PDF文档运行
+python letta/examples/audited_memory_rag.py /path/to/your/document.pdf
+
+# 系统会自动创建 ./logs/rag_audit.db 
+# 记录所有对话、风险检测和系统操作事件
+```
+
+#### 审计报告生成
+```bash
+# 生成综合审计报告
+python letta/examples/generate_audit_report.py
+
+# 报告自动保存到 ./logs/comprehensive_audit_report_[timestamp].md
+# 包含：用户行为分析、风险事件统计、敏感词检测等
+```
+
+#### 审计系统演示
+```bash
+# 运行完整的审计演示
+python letta/examples/audit_system_demo.py
+
+# 演示内容包括：
+# 1. 文档摄入和处理审计
+# 2. 多类型用户查询（正常、中风险、高风险）
+# 3. 实时风险检测和敏感内容识别
+# 4. 自动生成综合审计报告
+```
+
+#### 审计功能特点
+
+1. **🔍 实时监控**: 记录每次用户查询和系统响应
+2. **⚠️ 风险检测**: 自动识别敏感内容和高风险行为
+3. **📊 多维分析**: 用户行为、时间趋势、关键词统计
+4. **📝 自动报告**: 生成详细的Markdown审计报告
+5. **💾 轻量存储**: 基于SQLite，无需额外数据库服务
+
+#### 风险级别说明
+- 🟢 **LOW (0-1分)**: 正常对话，无敏感内容
+- 🟡 **MEDIUM (2-4分)**: 包含敏感词汇，需关注
+- 🔴 **HIGH (5+分)**: 高风险内容，需重点审查
+
+#### 审计数据查询
+```python
+# 连接审计数据库查询
+import sqlite3
+conn = sqlite3.connect('./logs/rag_audit.db')
+cursor = conn.cursor()
+
+# 查询高风险对话
+cursor.execute("""
+    SELECT user_id, risk_level, sensitive_score, keywords_detected
+    FROM rag_audit_logs 
+    WHERE risk_level = 'HIGH'
+    ORDER BY timestamp DESC
+""")
+
+for row in cursor.fetchall():
+    print(f"用户: {row[0]}, 风险: {row[1]}, 分数: {row[2]}")
+```
+
+### 高级审计功能
+```bash
+# 综合审计仪表板（Web界面）
 python letta/examples/comprehensive_audit_dashboard.py
 
-# 最终审计报告生成器
-python letta/examples/final_audit_dashboard.py
-
-# 分析已有审计日志
+# 审计日志分析
 python analyze_audit_logs.py
 ```
 
-### 📊 监控与可视化
+### 系统管理
 ```bash
-# 查看审计报告 (会在浏览器中自动打开)
-# 报告位置: letta/examples/reports/
-# 模板位置: letta/examples/templates/
-
-# 启动综合可视化面板
-python letta/examples/comprehensive_audit_dashboard.py
-```
-
-### 🔧 系统管理工具
-```bash
-# OpenGauss数据库兼容性迁移
+# 数据库兼容性迁移
 python migrate_to_opengauss_compatibility.py
 
 # 向量存储修复工具
 python simple_vector_fix.py
 
-# RAG系统状态检查
+# 系统配置检查
 python check_rag_system.py
 ```
+
+**审计报告位置**:
+- 新版审计报告: `./logs/comprehensive_audit_report_[timestamp].md`
+- 传统报告文件: `letta/examples/reports/`
+- HTML模板: `letta/examples/templates/`
 
 ### 基础用法
 
 
-## 🔧 配置说明
+## 配置说明
 
 ### 环境变量配置
 
 项目使用环境变量配置LLM和Embedding服务接口，不再使用硬编码地址。
 
-#### 1. 配置文件设置
+#### 配置文件设置
 
 创建或编辑 `.env` 文件（项目根目录）：
 
@@ -205,22 +431,20 @@ LETTA_PG_PASSWORD=0pen_gauss
 LETTA_PG_URI=postgresql://opengauss:0pen_gauss@localhost:5432/letta
 ```
 
-#### 2. OpenGauss数据库初始化
+#### OpenGauss数据库初始化
 
 **自动初始化（推荐）**：
 ```bash
-# 启动Letta Server时自动执行数据库迁移
-letta server
+letta server  # 启动时自动执行数据库迁移
 ```
 
 **手动初始化（可选）**：
 ```bash
-# 手动执行数据库初始化和向量扩展安装
 python migrate_to_opengauss_compatibility.py
-
-# 或手动执行SQL初始化
+```
 docker exec -it opengauss gsql -d letta -U opengauss -c "
 CREATE EXTENSION IF NOT EXISTS vector;
+```sql
 CREATE TABLE IF NOT EXISTS passage_embeddings (
     id SERIAL PRIMARY KEY,
     text TEXT NOT NULL, 
@@ -230,12 +454,11 @@ CREATE TABLE IF NOT EXISTS passage_embeddings (
 );
 CREATE INDEX idx_passage_embeddings_vector 
 ON passage_embeddings USING ivfflat (embedding vector_cosine_ops);
-"
 ```
 
-> 💡 **提示**: Letta Server启动时会自动检测OpenGauss配置并执行必要的数据库初始化，包括创建向量扩展、表结构和索引。无需手动干预！
+**提示**: Letta Server启动时会自动检测OpenGauss配置并执行必要的数据库初始化。
 
-#### 3. 环境变量说明
+#### 环境变量说明
 
 | 变量名 | 默认值 | 说明 |
 |--------|--------|------|
@@ -243,16 +466,14 @@ ON passage_embeddings USING ivfflat (embedding vector_cosine_ops);
 | `VLLM_API_BASE` | `http://127.0.0.1:8000/v1` | vLLM服务基础URL |
 | `BGE_API_BASE` | `http://127.0.0.1:8003/v1` | BGE embedding服务URL |
 | `EMBEDDING_API_BASE` | `http://127.0.0.1:8003/v1` | 通用embedding服务URL |
-| `LETTA_PG_URI` | `postgresql://opengauss:...@localhost:5432/letta` | OpenGauss数据库连接URI |
+| `LETTA_PG_URI` | `postgresql://...` | OpenGauss数据库连接URI |
 
-#### 4. 配置文件使用
-
-项目支持两种配置方式：
+#### 配置文件使用
 
 **方式1：复制示例配置**
 ```bash
 cp .env.example .env
-# 然后编辑 .env 文件修改配置
+# 编辑 .env 文件修改配置
 ```
 
 **方式2：导出环境变量**
@@ -261,16 +482,13 @@ export OPENAI_API_BASE=http://your-llm-server:8000/v1
 export BGE_API_BASE=http://your-embedding-server:8003/v1
 ```
 
-#### 5. 验证配置
-
-运行以下命令验证配置是否正确加载：
+#### 验证配置
 
 ```python
 from letta.settings import ModelSettings
 settings = ModelSettings()
 print('OpenAI API Base:', settings.openai_api_base)
 print('BGE API Base:', settings.bge_api_base)
-print('vLLM API Base:', settings.vllm_api_base)
 ```
 
 #### 6. 配置文件安全说明
@@ -288,55 +506,165 @@ OVERLAP = 50           # 重叠字符数
 TOP_K = 3             # 检索文档数量
 ```
 
-## 🐛 故障排除
+## 🛡️ 审计系统
 
-### 常见问题及解决方案
+### 系统概述
 
-1. **Embedding服务连接失败**
-   ```bash
-   # 检查BGE embedding服务状态（默认8003端口）
-   curl http://localhost:8003/v1/models
-   
-   # 检查配置是否正确加载
-   python -c "from letta.settings import ModelSettings; print(ModelSettings().bge_api_base)"
-   
-   # 如果需要修改端点，编辑 .env 文件
-   echo "BGE_API_BASE=http://your-server:8003/v1" >> .env
-   ```
+本项目实现了完整的RAG系统审计机制，基于SQLite数据库记录从知识摄入到用户查询的完整生命周期，确保系统的可追溯性、安全性和合规性。
 
-2. **LLM服务连接失败**
-   ```bash
-   # 检查LLM服务状态（默认8000端口）
-   curl http://localhost:8000/v1/models
-   
-   # 检查配置
-   python -c "from letta.settings import ModelSettings; print(ModelSettings().openai_api_base)"
-   
-   # 修改LLM端点
-   echo "OPENAI_API_BASE=http://your-llm-server:8000/v1" >> .env
-   ```
+### 核心特性
 
-3. **数据库连接失败**
-   ```bash
-   # 检查容器状态
-   docker ps | grep opengauss
-   
-   # 重启数据库
-   docker restart opengauss
-   ```
+- **📝 完整追踪**: 记录文档处理、用户查询、系统响应的全流程
+- **🔍 智能检测**: 内置23个敏感关键词和6个风险模式，自动识别潜在威胁
+- **⚡ 实时分析**: 三级风险评估（LOW/MEDIUM/HIGH），实时标记高危行为
+- **📊 多维报告**: 用户行为分析、时间趋势统计、敏感词汇分析
+- **💾 轻量存储**: 基于SQLite，无需额外数据库服务
 
-3. **PDF解析失败**
-   ```python
-   # 测试PDF文件
-   import PyPDF2
-   with open("test.pdf", "rb") as f:
-       reader = PyPDF2.PdfReader(f)
-       print(f"页数: {len(reader.pages)}")
-   ```
+### 快速开始
 
-4. **向量维度错误**
-   - embedding模型输出维度是否与代码中一致
-   - 确保数据库表结构正确
+```bash
+# 1. 运行带审计的RAG系统
+python letta/examples/audited_memory_rag.py /path/to/document.pdf
+
+# 2. 生成审计报告
+python letta/examples/generate_audit_report.py
+
+# 3. 查看完整演示
+python letta/examples/audit_system_demo.py
+```
+
+### 审计数据库结构
+
+审计系统使用SQLite存储，主要包含：
+
+- **rag_audit_logs**: 核心审计日志表
+- **high_risk_events**: 高风险事件记录表
+- **system_operations**: 系统操作审计表
+
+### 风险检测机制
+
+#### 敏感关键词（23个）
+```
+身份信息: 身份证、银行卡、账号、password等
+隐私数据: 个人信息、隐私、机密、confidential等
+财务信息: 信用卡、工资、财务等
+操作风险: 删除、修改、delete、modify等
+```
+
+#### 风险模式（6个正则表达式）
+```
+安全绕过: .*如何.*绕过.*
+系统攻击: .*破解.*、.*漏洞.*、.*攻击.*
+信息泄露: .*黑客.*、.*泄露.*
+```
+
+#### 风险级别
+- 🟢 **LOW (0-1分)**: 正常对话
+- 🟡 **MEDIUM (2-4分)**: 包含敏感词汇
+- 🔴 **HIGH (5+分)**: 包含高风险内容
+
+### 审计报告示例
+
+生成的审计报告包含：
+
+```markdown
+# RAG系统综合审计报告
+
+## 📊 总体统计
+- 总对话数: 15
+- 活跃用户数: 8
+- 平均敏感度分数: 1.2
+- 风险级别分布: LOW 80%, MEDIUM 18%, HIGH 2%
+
+## 🚨 高风险事件
+- 时间: 2024-03-15 14:23:12
+- 用户: user_suspicious
+- 敏感度分数: 6
+- 检测关键词: ["密码", "删除", "账号"]
+
+## 👤 用户活动分析
+- 重点关注用户: 3名
+- 异常行为模式: 检测到2次连续敏感查询
+```
+
+### 数据库查询示例
+
+```python
+import sqlite3
+
+# 连接审计数据库
+conn = sqlite3.connect('./logs/rag_audit.db')
+cursor = conn.cursor()
+
+# 查询最近24小时的高风险事件
+cursor.execute("""
+    SELECT timestamp, user_id, sensitive_score, keywords_detected
+    FROM rag_audit_logs 
+    WHERE risk_level = 'HIGH' 
+      AND datetime(timestamp) > datetime('now', '-1 day')
+    ORDER BY timestamp DESC
+""")
+
+for row in cursor.fetchall():
+    print(f"时间: {row[0]}, 用户: {row[1]}, 分数: {row[2]}")
+```
+
+### 合规性支持
+
+- ✅ **完整追溯**: 每个操作都有详细时间戳和会话标识
+- ✅ **隐私保护**: 敏感内容仅记录关键词哈希值
+- ✅ **数据完整性**: 使用哈希验证确保审计日志不被篡改
+- ✅ **自动归档**: 支持定期备份和长期存储
+
+更多详细信息请参考：
+- 📋 [审计系统设计文档](AUDIT_SYSTEM_DESIGN.md)
+- 📈 [审计系统实现总结](AUDIT_SYSTEM_SUMMARY.md)
+
+## 故障排除
+
+### 常见问题解决方案
+
+**1. Embedding服务连接失败**
+```bash
+# 检查BGE服务状态
+curl http://localhost:8003/v1/models
+
+# 验证配置
+python -c "from letta.settings import ModelSettings; print(ModelSettings().bge_api_base)"
+
+# 修改端点
+echo "BGE_API_BASE=http://your-server:8003/v1" >> .env
+```
+
+**2. LLM服务连接失败**
+```bash
+# 检查LLM服务
+curl http://localhost:8000/v1/models
+
+# 修改端点
+echo "OPENAI_API_BASE=http://your-server:8000/v1" >> .env
+```
+
+**3. 数据库连接失败**
+```bash
+# 检查容器状态
+docker ps | grep opengauss
+
+# 重启数据库
+docker restart opengauss
+```
+
+**4. PDF解析失败**
+```python
+import PyPDF2
+with open("test.pdf", "rb") as f:
+    reader = PyPDF2.PdfReader(f)
+    print(f"页数: {len(reader.pages)}")
+```
+
+**5. 向量维度错误**
+- 确认embedding模型输出维度（BGE-M3为1024维）
+- 检查数据库表结构定义
    - 检查向量存储格式
 
 ### 性能优化建议
@@ -385,24 +713,24 @@ TOP_K = 3             # 检索文档数量
 | **配置管理** | 硬编码 | ✅ **环境变量配置**，灵活的服务端点管理 |
 | **部署方式** | 手动配置 | ✅ **Docker容器化**，一键启动完整系统 |
 
-### 📊 技术栈升级
+### 技术栈升级
 
-- **数据库**: PostgreSQL → **OpenGauss** (向量数据库)
+**数据库**: PostgreSQL → **OpenGauss** (向量数据库)
 
-#### 🔄 PostgreSQL迁移到OpenGauss核心代码
+#### PostgreSQL到OpenGauss迁移核心代码
 
 **1. 数据库连接配置**
 ```python
 # 原PostgreSQL配置
 DATABASE_URL = "postgresql://user:pass@localhost:5432/letta"
 
-# 迁移到OpenGauss配置  
+# OpenGauss配置  
 DATABASE_URL = "postgresql://opengauss:0pen_gauss@localhost:5432/letta"
 ```
 
 **2. 向量存储表结构**
 ```sql
--- OpenGauss向量扩展启用
+-- 启用向量扩展
 CREATE EXTENSION IF NOT EXISTS vector;
 
 -- 创建向量存储表
@@ -414,7 +742,7 @@ CREATE TABLE IF NOT EXISTS passage_embeddings (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- 创建向量索引加速查询
+-- 向量索引
 CREATE INDEX idx_passage_embeddings_vector 
 ON passage_embeddings USING ivfflat (embedding vector_cosine_ops);
 ```
@@ -432,15 +760,6 @@ def vector_similarity_search(query_embedding, top_k=5):
     """
     return execute_query(sql, (query_embedding, query_embedding, top_k))
 ```
-
-**4. 向量处理工具**
-```python
-# migrate_to_opengauss_compatibility.py - 数据迁移脚本
-def migrate_vectors_to_opengauss():
-    # 从PostgreSQL导出向量数据
-    old_data = fetch_postgresql_vectors()
-    
-    # 转换为OpenGauss兼容格式
     for record in old_data:
         embedding_str = f"[{','.join(map(str, record['embedding']))}]"
         insert_opengauss_vector(record['text'], embedding_str, record['metadata'])
@@ -533,6 +852,28 @@ print('✅ OpenAI API Base:', settings.openai_api_base)
 print('✅ BGE API Base:', settings.bge_api_base)
 print('✅ vLLM API Base:', settings.vllm_api_base)
 "
+```
+
+### 🐳 Docker环境验证
+
+```bash
+# 1. 检查所有容器状态
+docker-compose -f docker-compose.opengauss.yml ps
+
+# 2. 验证OpenGauss数据库连接
+docker exec letta-opengauss-db gsql -d letta -U opengauss -c "SELECT version();"
+
+# 3. 检查Letta服务健康状态
+curl http://localhost:8283/v1/health
+
+# 4. 查看服务日志
+docker-compose -f docker-compose.opengauss.yml logs --tail=50 letta-server
+
+# 5. 测试RAG功能（在容器内）
+docker exec -it letta-server python letta/examples/memory_block_rag.py
+
+# 6. 访问审计仪表板
+curl http://localhost:8283/v1/audit/dashboard
 ```
 
 看到所有 "✅" 表示系统部署成功！

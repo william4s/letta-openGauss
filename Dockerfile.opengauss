@@ -1,0 +1,113 @@
+# Letta-OpenGauss RAG系统 Docker镜像
+# 支持OpenGauss向量数据库集成和BGE-M3 Embedding
+
+# 基础镜像 - 使用官方Python 3.11镜像
+FROM python:3.11-slim AS base
+
+# 设置环境变量
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    DEBIAN_FRONTEND=noninteractive \
+    POETRY_NO_INTERACTION=1 \
+    POETRY_VIRTUALENVS_IN_PROJECT=1 \
+    POETRY_VIRTUALENVS_CREATE=1 \
+    POETRY_CACHE_DIR=/tmp/poetry_cache
+
+# 安装系统依赖
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    curl \
+    git \
+    libpq-dev \
+    python3-dev \
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+# 构建阶段
+FROM base AS builder
+
+WORKDIR /app
+
+# 安装Poetry
+RUN pip install --no-cache-dir poetry==1.8.3
+
+# 复制项目文件
+COPY pyproject.toml poetry.lock ./
+COPY . .
+
+# 安装Python依赖
+RUN poetry lock --no-update && \
+    poetry install --all-extras --no-dev && \
+    rm -rf $POETRY_CACHE_DIR
+
+# 运行时阶段
+FROM base AS runtime
+
+# 创建非root用户
+RUN groupadd -r letta && useradd -r -g letta letta
+
+# 安装运行时依赖
+RUN apt-get update && apt-get install -y \
+    curl \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# 从构建阶段复制虚拟环境和应用代码
+COPY --from=builder --chown=letta:letta /app .
+
+# 设置虚拟环境路径
+ENV PATH="/app/.venv/bin:$PATH"
+
+# 创建必要的目录
+RUN mkdir -p /app/logs /app/data /app/reports /app/templates && \
+    chown -R letta:letta /app
+
+# 复制启动脚本
+COPY --chown=letta:letta <<EOF /app/docker-entrypoint.sh
+#!/bin/bash
+set -e
+
+echo "🚀 Starting Letta-OpenGauss RAG System..."
+
+# 等待数据库可用
+if [ -n "\$LETTA_PG_URI" ]; then
+    echo "⏳ Waiting for OpenGauss database to be ready..."
+    until pg_isready -d "\$LETTA_PG_URI"; do
+        echo "Database is unavailable - sleeping"
+        sleep 2
+    done
+    echo "✅ Database is ready!"
+fi
+
+# 运行数据库迁移（如果需要）
+if [ "\${AUTO_MIGRATE:-true}" = "true" ]; then
+    echo "🔄 Running database migrations..."
+    python migrate_to_opengauss_compatibility.py || echo "⚠️ Migration completed with warnings"
+fi
+
+# 设置权限
+if [ -n "\$LETTA_SANDBOX_MOUNT_PATH" ]; then
+    chmod 777 "\$LETTA_SANDBOX_MOUNT_PATH" || echo "⚠️ Could not set sandbox permissions"
+fi
+
+# 启动服务
+echo "🎯 Starting Letta server on \${HOST:-0.0.0.0}:\${PORT:-8283}..."
+exec python -m letta.server --host \${HOST:-0.0.0.0} --port \${PORT:-8283}
+EOF
+
+RUN chmod +x /app/docker-entrypoint.sh
+
+# 切换到非root用户
+USER letta
+
+# 暴露端口
+EXPOSE 8283
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8283/v1/health || exit 1
+
+# 启动命令
+ENTRYPOINT ["/app/docker-entrypoint.sh"]

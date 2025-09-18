@@ -315,8 +315,13 @@ class MemoryBlockRAG:
 
 def main():
     """主函数 - Memory Block RAG系统示例"""
-    # 配置
-    pdf_file = "/home/shiwc24/ospp/letta-openGauss/letta/examples/jr.pdf"
+    # 从命令行参数获取PDF文件路径
+    if len(sys.argv) > 1:
+        pdf_file = sys.argv[1]
+    else:
+        # 默认文件路径
+        pdf_file = "jr.pdf"
+    
     chunk_size = 1000
     
     print("📚 基于Memory Blocks的Letta RAG系统")
@@ -329,6 +334,7 @@ def main():
     # 检查文件
     if not os.path.exists(pdf_file):
         print(f"❌ 找不到文件: {pdf_file}")
+        print(f"💡 使用方法: python {sys.argv[0]} /path/to/your/document.pdf")
         return
     
     # 创建RAG系统

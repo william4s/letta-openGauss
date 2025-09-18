@@ -1,0 +1,140 @@
+# Letta-OpenGauss RAG系统 Docker Compose配置
+# 包含OpenGauss数据库、BGE Embedding服务和Letta服务器的完整栈
+
+version: '3.8'
+
+services:
+  # OpenGauss向量数据库
+  opengauss:
+    image: enmotech/opengauss:latest
+    container_name: letta-opengauss-db
+    environment:
+      - GS_PASSWORD=${LETTA_PG_PASSWORD:-0pen_gauss}
+      - GS_DB=${LETTA_PG_DB:-letta}
+      - GS_USER=${LETTA_PG_USER:-opengauss}
+    ports:
+      - "${LETTA_PG_PORT:-5432}:5432"
+    volumes:
+      - opengauss_data:/var/lib/opengauss/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "gsql -d ${LETTA_PG_DB:-letta} -U ${LETTA_PG_USER:-opengauss} -c 'SELECT 1;'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - letta-network
+
+  # BGE Embedding服务 (可选，如果有的话)
+  bge-embedding:
+    image: registry.cn-hangzhou.aliyuncs.com/modelscope-repo/bge-m3:latest
+    container_name: letta-bge-embedding
+    ports:
+      - "${BGE_API_PORT:-8003}:8003"
+    environment:
+      - MODEL_NAME=bge-m3
+      - DEVICE=cpu
+      - MAX_LENGTH=1024
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8003/v1/models || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - letta-network
+
+  # vLLM服务 (可选，如果有的话)
+  vllm-service:
+    image: vllm/vllm-openai:latest
+    container_name: letta-vllm-service
+    ports:
+      - "${VLLM_API_PORT:-8000}:8000"
+    environment:
+      - MODEL=${VLLM_MODEL:-Qwen/Qwen2-7B-Instruct}
+      - GPU_MEMORY_UTILIZATION=0.8
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/v1/models || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    networks:
+      - letta-network
+    # 如果有GPU，取消注释以下配置
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  # Letta服务器
+  letta-server:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - LETTA_VERSION=${LETTA_VERSION:-latest}
+    container_name: letta-server
+    depends_on:
+      opengauss:
+        condition: service_healthy
+      # bge-embedding:
+      #   condition: service_healthy
+      # vllm-service:
+      #   condition: service_healthy
+    ports:
+      - "${LETTA_SERVER_PORT:-8283}:8283"
+      - "4317:4317"  # OpenTelemetry gRPC
+      - "4318:4318"  # OpenTelemetry HTTP
+    env_file:
+      - .env
+    environment:
+      # 数据库配置
+      - LETTA_ENABLE_OPENGAUSS=true
+      - LETTA_PG_HOST=opengauss
+      - LETTA_PG_PORT=5432
+      - LETTA_PG_DB=${LETTA_PG_DB:-letta}
+      - LETTA_PG_USER=${LETTA_PG_USER:-opengauss}
+      - LETTA_PG_PASSWORD=${LETTA_PG_PASSWORD:-0pen_gauss}
+      - LETTA_PG_URI=postgresql://${LETTA_PG_USER:-opengauss}:${LETTA_PG_PASSWORD:-0pen_gauss}@opengauss:5432/${LETTA_PG_DB:-letta}
+      
+      # API配置
+      - OPENAI_API_BASE=${OPENAI_API_BASE:-http://vllm-service:8000/v1}
+      - BGE_API_BASE=${BGE_API_BASE:-http://bge-embedding:8003/v1}
+      - VLLM_API_BASE=${VLLM_API_BASE:-http://vllm-service:8000/v1}
+      
+      # 其他配置
+      - LETTA_DEBUG=${LETTA_DEBUG:-false}
+      - HOST=0.0.0.0
+      - PORT=8283
+    volumes:
+      - letta_logs:/app/logs
+      - letta_data:/app/data
+      - ./reports:/app/reports
+      - ./templates:/app/templates
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8283/v1/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - letta-network
+
+# 数据卷
+volumes:
+  opengauss_data:
+    driver: local
+  letta_logs:
+    driver: local
+  letta_data:
+    driver: local
+
+# 网络
+networks:
+  letta-network:
+    driver: bridge

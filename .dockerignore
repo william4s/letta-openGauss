@@ -1,9 +1,75 @@
+# Python相关
 **/__pycache__
 **/.pytest_cache
 **/*.pyc
 **/*.pyo
 **/*.pyd
+*.egg-info/
+.tox/
+.coverage
+.pytest_cache/
+htmlcov/
+
+# Git和版本控制
 .git
 .gitignore
+.gitattributes
+
+# 环境配置
 .env
+.env.local
+.env.*.local
+
+# 日志文件
 *.log
+logs/
+reports/
+
+# 开发工具
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 数据库文件
+*.db
+*.sqlite3
+
+# 构建产物
+dist/
+build/
+*.tar.gz
+
+# 文档
+*.md
+!README.md
+assets/
+docs/
+
+# 测试相关
+tests/
+test_*.py
+*_test.py
+
+# 性能测试
+performance_tests/
+locust_test.py
+
+# 临时文件
+tmp/
+temp/
+.tmp/
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# 大文件
+*.pdf
+*.mp4
+*.avi
