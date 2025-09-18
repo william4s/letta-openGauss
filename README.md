@@ -205,7 +205,37 @@ LETTA_PG_PASSWORD=0pen_gauss
 LETTA_PG_URI=postgresql://opengauss:0pen_gauss@localhost:5432/letta
 ```
 
-#### 2. 环境变量说明
+#### 2. OpenGauss数据库初始化
+
+**自动初始化（推荐）**：
+```bash
+# 启动Letta Server时自动执行数据库迁移
+letta server
+```
+
+**手动初始化（可选）**：
+```bash
+# 手动执行数据库初始化和向量扩展安装
+python migrate_to_opengauss_compatibility.py
+
+# 或手动执行SQL初始化
+docker exec -it opengauss gsql -d letta -U opengauss -c "
+CREATE EXTENSION IF NOT EXISTS vector;
+CREATE TABLE IF NOT EXISTS passage_embeddings (
+    id SERIAL PRIMARY KEY,
+    text TEXT NOT NULL, 
+    embedding vector(1024),
+    metadata JSONB,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_passage_embeddings_vector 
+ON passage_embeddings USING ivfflat (embedding vector_cosine_ops);
+"
+```
+
+> 💡 **提示**: Letta Server启动时会自动检测OpenGauss配置并执行必要的数据库初始化，包括创建向量扩展、表结构和索引。无需手动干预！
+
+#### 3. 环境变量说明
 
 | 变量名 | 默认值 | 说明 |
 |--------|--------|------|
@@ -213,8 +243,9 @@ LETTA_PG_URI=postgresql://opengauss:0pen_gauss@localhost:5432/letta
 | `VLLM_API_BASE` | `http://127.0.0.1:8000/v1` | vLLM服务基础URL |
 | `BGE_API_BASE` | `http://127.0.0.1:8003/v1` | BGE embedding服务URL |
 | `EMBEDDING_API_BASE` | `http://127.0.0.1:8003/v1` | 通用embedding服务URL |
+| `LETTA_PG_URI` | `postgresql://opengauss:...@localhost:5432/letta` | OpenGauss数据库连接URI |
 
-#### 3. 配置文件使用
+#### 4. 配置文件使用
 
 项目支持两种配置方式：
 
@@ -230,7 +261,7 @@ export OPENAI_API_BASE=http://your-llm-server:8000/v1
 export BGE_API_BASE=http://your-embedding-server:8003/v1
 ```
 
-#### 4. 验证配置
+#### 5. 验证配置
 
 运行以下命令验证配置是否正确加载：
 
@@ -242,7 +273,7 @@ print('BGE API Base:', settings.bge_api_base)
 print('vLLM API Base:', settings.vllm_api_base)
 ```
 
-#### 5. 配置文件安全说明
+#### 6. 配置文件安全说明
 
 - **`.env` 文件包含敏感信息，已自动加入 `.gitignore`**
 - **不要提交 `.env` 文件到版本控制系统**
@@ -357,6 +388,94 @@ TOP_K = 3             # 检索文档数量
 ### 📊 技术栈升级
 
 - **数据库**: PostgreSQL → **OpenGauss** (向量数据库)
+
+#### 🔄 PostgreSQL迁移到OpenGauss核心代码
+
+**1. 数据库连接配置**
+```python
+# 原PostgreSQL配置
+DATABASE_URL = "postgresql://user:pass@localhost:5432/letta"
+
+# 迁移到OpenGauss配置  
+DATABASE_URL = "postgresql://opengauss:0pen_gauss@localhost:5432/letta"
+```
+
+**2. 向量存储表结构**
+```sql
+-- OpenGauss向量扩展启用
+CREATE EXTENSION IF NOT EXISTS vector;
+
+-- 创建向量存储表
+CREATE TABLE IF NOT EXISTS passage_embeddings (
+    id SERIAL PRIMARY KEY,
+    text TEXT NOT NULL,
+    embedding vector(1024),  -- OpenGauss向量类型
+    metadata JSONB,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 创建向量索引加速查询
+CREATE INDEX idx_passage_embeddings_vector 
+ON passage_embeddings USING ivfflat (embedding vector_cosine_ops);
+```
+
+**3. 向量查询核心代码**
+```python
+# letta/orm/opengauss_functions.py
+def vector_similarity_search(query_embedding, top_k=5):
+    sql = """
+    SELECT text, metadata, 
+           1 - (embedding <=> %s::vector) AS similarity_score
+    FROM passage_embeddings
+    ORDER BY embedding <=> %s::vector
+    LIMIT %s;
+    """
+    return execute_query(sql, (query_embedding, query_embedding, top_k))
+```
+
+**4. 向量处理工具**
+```python
+# migrate_to_opengauss_compatibility.py - 数据迁移脚本
+def migrate_vectors_to_opengauss():
+    # 从PostgreSQL导出向量数据
+    old_data = fetch_postgresql_vectors()
+    
+    # 转换为OpenGauss兼容格式
+    for record in old_data:
+        embedding_str = f"[{','.join(map(str, record['embedding']))}]"
+        insert_opengauss_vector(record['text'], embedding_str, record['metadata'])
+```
+
+**5. Letta Server启动时自动迁移**
+```python
+# letta/server/db.py - 服务器启动时自动执行
+def initialize_opengauss_database():
+    """完整的 OpenGauss 数据库初始化流程"""
+    if not settings.enable_opengauss:
+        return True
+    
+    logger.info("=== OpenGauss Database Initialization ===")
+    
+    # 1. 确保数据库存在
+    ensure_opengauss_database_exists()
+    
+    # 2. 运行 Alembic 迁移创建表结构
+    run_alembic_migrations_for_opengauss()
+    
+    # 3. 自动兼容性检查和修复
+    from letta.server.opengauss_startup_check import run_compatibility_check
+    if not run_compatibility_check():
+        logger.warning("⚠️ 发现兼容性问题，建议手动运行迁移脚本")
+    
+    logger.info("=== OpenGauss Database Initialization Complete ===")
+```
+
+**启动时自动执行的操作：**
+- ✅ 创建数据库和必要的扩展（vector, pgcrypto）
+- ✅ 执行Alembic迁移创建表结构
+- ✅ 兼容性检查，发现问题时给出建议
+- ✅ 无需手动干预，Server启动即完成迁移
+
 - **向量化**: OpenAI → **BGE-M3** (中文优化)
 - **存储架构**: 传统存储 → **Memory Block** (智能分块)
 - **监控体系**: 无 → **审计系统** (全链路监控)

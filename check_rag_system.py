@@ -70,7 +70,7 @@ def check_database():
 
 def check_pdf_file():
     """检查PDF文件"""
-    pdf_path = "/home/shiwc24/ospp/letta-openGauss/letta/examples/jr.pdf"
+    pdf_path = "letta/examples/jr.pdf"
     if os.path.exists(pdf_path):
         print(f"✓ 测试PDF文件存在: {pdf_path}")
         return True
